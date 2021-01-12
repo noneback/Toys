@@ -17,16 +17,16 @@ type Master struct {
 	tasksContext []TaskContext
 	lock         sync.Mutex
 	files        []string
-	phrase       PhraseKind
+	phase        PhaseKind
 	done         bool
 	workerID     int
 }
 
 // inititalize the tasksContext
-func (m *Master) initTask(phrase PhraseKind) {
+func (m *Master) initTask(phase PhaseKind) {
 
-	m.phrase = phrase
-	switch phrase {
+	m.phase = phase
+	switch phase {
 	case MAP:
 		m.tasksContext = make([]TaskContext, len(m.files))
 		log.Println("map task init...")
@@ -34,7 +34,7 @@ func (m *Master) initTask(phrase PhraseKind) {
 		m.tasksContext = make([]TaskContext, m.nReduce)
 		log.Println("Reduce task init")
 	default:
-		panic("initTask:No such phrase")
+		panic("initTask:No such phase")
 	}
 
 	for i := 0; i < len(m.tasksContext); i++ {
@@ -84,8 +84,8 @@ func (m *Master) schedule() {
 	}
 
 	if allComplete {
-		if m.phrase == MAP {
-			m.phrase = REDUCE
+		if m.phase == MAP {
+			m.phase = REDUCE
 			//init all reduce task
 			m.initTask(REDUCE)
 		} else {
@@ -200,10 +200,10 @@ func (m *Master) addTask2Queue(taskID int) {
 	t := Task{
 		Filename: "",
 		ID:       taskID,
-		Phrase:   m.phrase,
+		Phase:    m.phase,
 	}
 
-	if m.phrase == MAP {
+	if m.phase == MAP {
 		t.Filename = m.files[taskID]
 	}
 	m.taskQueue <- t

@@ -95,7 +95,7 @@ func (w *worker) report(t *Task, state ContextState) bool {
 
 func (w *worker) doTask(t *Task) {
 
-	switch t.Phrase {
+	switch t.Phase {
 	case MAP:
 		log.Println("Worker", w.ID, ":do map task ", t.ID)
 		w.doMapTask(t)

@@ -21,18 +21,18 @@ const (
 )
 
 const (
-	MAP PhraseKind = iota
+	MAP PhaseKind = iota
 	REDUCE
 )
 
 type ContextState int
 
-type PhraseKind int
+type PhaseKind int
 
 type Task struct {
 	ID       int
 	Filename string
-	Phrase   PhraseKind
+	Phase    PhaseKind
 }
 
 type TaskContext struct {
