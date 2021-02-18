@@ -3,7 +3,7 @@
 - a simple json-rpc framework
 - provide a Server and Client interface for RPC.
 - based on socket API and [json](https://github.com/nlohmann/json).
-- use std::thread for multi-thread.
+- use std::thread for multi-thread serving connection,with a blocking client
 ## usage
 **JRpc::Server**
 ```c++
