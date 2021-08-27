@@ -10,7 +10,6 @@ package raft
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -35,26 +34,31 @@ func TestInitialElection2A(t *testing.T) {
 	// sleep a bit to avoid racing with followers learning of the
 	// election, then check that all peers agree on the term.
 	time.Sleep(50 * time.Millisecond)
+
 	term1 := cfg.checkTerms()
 	if term1 < 1 {
 		t.Fatalf("term is %v, but should be at least 1", term1)
 	}
+	DPrintf("Checkpoint1")
 
 	// does the leader+term stay the same if there is no network failure?
 	time.Sleep(2 * RaftElectionTimeout)
+
 	term2 := cfg.checkTerms()
 	if term1 != term2 {
 		fmt.Printf("warning: term changed even though there were no failures")
 	}
+	DPrintf("Checkpoint2")
 
 	// there should still be a leader.
 	cfg.checkOneLeader()
-	for _, v := range cfg.rafts {
-		if v.leader == v.me {
-			log.Println("[leader]", v.me)
-		}
-	}
+	//for _, v := range cfg.rafts {
+	//	if v.leader == v.me {
+	//		log.Println("[leader]", v.me)
+	//	}
+	//}
 
+	NodesInfo(cfg.rafts)
 	cfg.end()
 }
 
@@ -64,31 +68,44 @@ func TestReElection2A(t *testing.T) {
 	defer cfg.cleanup()
 
 	cfg.begin("Test (2A): election after network failure")
-
+	DPrintf("Begin\n")
+	NodesInfo(cfg.rafts)
 	leader1 := cfg.checkOneLeader()
 
 	// if the leader disconnects, a new one should be elected.
 	cfg.disconnect(leader1)
+	DPrintf("leader disconnected %v\n", leader1)
+	NodesInfo(cfg.rafts)
 	cfg.checkOneLeader()
 
 	// if the old leader rejoins, that shouldn't
 	// disturb the new leader.
 	cfg.connect(leader1)
+	DPrintf("leader connected %v\n", leader1)
+	NodesInfo(cfg.rafts)
 	leader2 := cfg.checkOneLeader()
-
+	//time.Sleep(2 * HeartBeatsTimeout)
+	// todo
 	// if there's no quorum, no leader should
 	// be elected.
 	cfg.disconnect(leader2)
 	cfg.disconnect((leader2 + 1) % servers)
 	time.Sleep(2 * RaftElectionTimeout)
+	DPrintf("After Disconnected\n")
+	NodesInfo(cfg.rafts)
+	DPrintf("There should no leader")
 	cfg.checkNoLeader()
 
 	// if a quorum arises, it should elect a leader.
 	cfg.connect((leader2 + 1) % servers)
+	DPrintf("After ReConnected 1\n")
+	NodesInfo(cfg.rafts)
 	cfg.checkOneLeader()
 
 	// re-join of last node shouldn't prevent leader from existing.
 	cfg.connect(leader2)
+	DPrintf("After ReConnected 2\n")
+	NodesInfo(cfg.rafts)
 	cfg.checkOneLeader()
 
 	cfg.end()
@@ -105,6 +122,7 @@ func TestManyElections2A(t *testing.T) {
 
 	iters := 10
 	for ii := 1; ii < iters; ii++ {
+		DPrintf("\nAnother round\n")
 		// disconnect three nodes
 		i1 := rand.Int() % servers
 		i2 := rand.Int() % servers
@@ -115,14 +133,20 @@ func TestManyElections2A(t *testing.T) {
 
 		// either the current leader should still be alive,
 		// or the remaining four should elect a new one.
+		DPrintf("After disconnected\n")
+		NodesInfo(cfg.rafts)
 		cfg.checkOneLeader()
 
 		cfg.connect(i1)
 		cfg.connect(i2)
 		cfg.connect(i3)
+		DPrintf("After Reconnected\n")
+		NodesInfo(cfg.rafts)
 	}
 
+	NodesInfo(cfg.rafts)
 	cfg.checkOneLeader()
+	NodesInfo(cfg.rafts)
 
 	cfg.end()
 }

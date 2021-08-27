@@ -20,7 +20,6 @@ package raft
 import (
 	//	"bytes"
 
-	"log"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -31,8 +30,10 @@ import (
 )
 
 const (
-	HeartBeatsTimeout = time.Duration(100) * time.Microsecond
-	None              = -1
+	None         = -1
+	InitTerm     = 0
+	InitLogSize  = 10
+	InitLogIndex = 0
 )
 
 //
@@ -62,30 +63,26 @@ type ApplyMsg struct {
 // A Go object implementing a single Raft peer.
 //
 type Raft struct {
-	mu        sync.Mutex          // Lock to protect shared access to this peer's state
+	mu        sync.RWMutex        // Lock to protect shared access to this peer's state
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
 	me        int                 // this peer's index into peers[]
 	dead      int32               // set by Kill()
 	// NOTICE: 2A
-	role                  RoleType
-	term                  int
-	VotedFor              int
-	leader                int
-	randomElectionTimeout time.Duration
-	nextElectionTime      time.Time
-	electionTicker        *time.Timer
-	roleChan              chan RoleType
-	appChan               chan *AppendEntriesArgs
-	heartbeatsChan        chan Msg
-	voteChan              chan *RequestVoteArgs
+	role     RoleType
+	term     int
+	votedFor int
+	leader   int
+
+	electionTimer  *time.Timer
+	heartbeatTimer *time.Timer
 
 	roleMutex sync.Mutex
 
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
-	log         []string
+	logs        []*LogEntry
 	commitIndex int
 	lastApplied int
 	nextIndex   []int
@@ -95,10 +92,10 @@ type Raft struct {
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
+	rf.mu.RLock()
+	defer rf.mu.RUnlock()
 
-	return rf.term, rf.leader == rf.me
+	return rf.term, rf.role == Leader && rf.leader == rf.me
 }
 
 //
@@ -204,35 +201,29 @@ func (rf *Raft) killed() bool {
 	return z == 1
 }
 
-func (rf *Raft) tick() {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	log.Printf("%v: tick state %v\n", rf.me, rf.role)
-
-	if rf.role == Leader {
-		rf.setNextElectionTime()
-		rf.sendAppendMsg()
-	}
-
-	if time.Now().After(rf.nextElectionTime) {
-		log.Printf("%v election timeout\n", rf.me)
-		rf.setNextElectionTime()
-		rf.startElection()
-	}
-
-}
-
 func (rf *Raft) ticker() {
 	for rf.killed() == false {
-		rf.tick()
+		select {
+		case <-rf.electionTimer.C:
+			rf.mu.Lock()
+			if rf.role == Leader {
+				rf.mu.Unlock()
+				continue
+			}
+			rf.resetElectionTimer()
+			rf.startElection()
+			rf.mu.Unlock()
+		case <-rf.heartbeatTimer.C:
+			rf.mu.Lock()
+			if rf.role == Leader { // filter non-leader heartbeats
+				rf.resetHeartbeatTimer()
+				rf.sendAppendMsg()
+			}
+			rf.mu.Unlock()
+		}
 		time.Sleep(50 * time.Millisecond)
-	}
-}
 
-func (rf *Raft) setNextElectionTime() {
-	rand.Seed(time.Now().UnixNano())
-	ms := 400 + rand.Intn(350)
-	rf.nextElectionTime = time.Now().Add(time.Duration(ms) * time.Microsecond)
+	}
 }
 
 //
@@ -248,27 +239,29 @@ func (rf *Raft) setNextElectionTime() {
 //
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
-	rf := &Raft{}
-	rf.peers = peers
-	rf.persister = persister
-	rf.me = me
-	// NOTICE: 2A
-	rf.mu = sync.Mutex{}
-	rf.roleMutex = sync.Mutex{}
-	rf.term = 1
-	rf.role = Follower
-	rf.VotedFor = None
-	rf.leader = None
-	rf.setNextElectionTime()
-
-	rf.appChan = make(chan *AppendEntriesArgs)
-	rf.voteChan = make(chan *RequestVoteArgs)
 
 	rand.Seed(time.Now().UnixNano())
-
-	// rf.randomElectionTimeout = time.Duration(rand.Int63n(200)+400) * time.Microsecond
-	// rf.electionTicker = time.NewTimer(rf.randomElectionTimeout)
+	rf := &Raft{
+		peers:          peers,
+		dead:           0,
+		persister:      persister,
+		me:             me,
+		mu:             sync.RWMutex{},
+		term:           InitTerm,
+		role:           Follower,
+		votedFor:       None,
+		leader:         None,
+		electionTimer:  time.NewTimer(RandomizedElectionTimeout()),
+		heartbeatTimer: time.NewTimer(HeartBeatsTimeout),
+		logs:           make([]*LogEntry, 0, InitLogSize),
+		nextIndex:      make([]int, len(peers)),
+		matchIndex:     make([]int, len(peers)),
+		commitIndex:    InitLogIndex,
+	}
 	// Your initialization code here (2A, 2B, 2C).
+	for i := range peers {
+		rf.nextIndex[i], rf.matchIndex[i] = InitLogIndex, InitLogIndex
+	}
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
@@ -279,76 +272,10 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	return rf
 }
 
-func (rf *Raft) startElection() {
-	// has lock
-	rf.newTerm(rf.term + 1)
-	rf.role = Candidate
-	log.Printf("%v become candidate in term %v", rf.me, rf.term)
-	rf.VotedFor = rf.me
-	// RequestVote
-	args := &RequestVoteArgs{
-		Term:        rf.term,
-		CandidateID: rf.me,
-	}
-	voteCnt := 1
-	for p := range rf.peers {
-		if p == rf.me {
-			continue
-		}
-
-		go func(peer int) {
-			var reply RequestVoteReply
-
-			if ok := rf.sendRequestVote(peer, args, &reply); ok {
-				rf.mu.Lock()
-				defer rf.mu.Unlock()
-				// log.Printf("%v: Request reply in its term %v from %v: %v ", rf.me, rf.term, peer, &reply)
-				if reply.Term > rf.term {
-					rf.newTerm(reply.Term)
-					DPrintf("%v: become follower in term %v", rf.me, rf.term)
-					rf.role = Follower
-				}
-
-				if reply.VoteGranted {
-					voteCnt++
-					if voteCnt*2 > len(rf.peers) {
-						rf.role = Leader
-						log.Printf("[leader] %v: become leader in term %v", rf.me, rf.term)
-						rf.leader = rf.me
-						rf.sendAppendMsg()
-					}
-				}
-
-			}
-		}(p)
-	}
-
-}
-
-func (rf *Raft) sendAppendMsg() {
-	// has lock
-	args := &AppendEntriesArgs{
-		Term:     rf.term,
-		LeaderID: rf.me,
-	}
-
-	for p := range rf.peers {
-		if p == rf.me {
-			continue
-		}
-
-		go func(peer int) {
-			var reply AppendEntriesReply
-			if ok := rf.sendAppendEntries(peer, args, &reply); ok {
-				rf.mu.Lock()
-				defer rf.mu.Unlock()
-
-				if reply.Term > rf.term {
-					rf.newTerm(reply.Term)
-					rf.role = Follower
-				}
-			}
-		}(p)
-	}
-
+// newTerm reset the term and voteFor
+// has lock
+func (rf *Raft) newTerm(term int, leader int) {
+	rf.term = term
+	rf.leader = leader
+	rf.votedFor = None
 }
