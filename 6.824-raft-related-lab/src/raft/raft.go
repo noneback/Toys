@@ -83,6 +83,9 @@ type Raft struct {
 	lastApplied int
 	nextIndex   []int
 	matchIndex  []int
+
+	replicatorCond []*sync.Cond
+	applyCond      *sync.Cond
 }
 
 // return currentTerm and whether this server
@@ -172,13 +175,13 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	if !isLeader {
 		return None, term, isLeader
 	}
-	entry := rf.AppendLog(command)
+	entry := rf.appendLog(command)
 
 	rf.sendAppendMsg()
 	return entry.Index, term, isLeader
 }
 
-func (rf *Raft) AppendLog(cmd interface{}) *LogEntry {
+func (rf *Raft) appendLog(cmd interface{}) *LogEntry {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
@@ -214,7 +217,7 @@ func (rf *Raft) killed() bool {
 }
 
 func (rf *Raft) ticker() {
-	for rf.killed() == false {
+	for !rf.killed() {
 		select {
 		case <-rf.electionTimer.C:
 			rf.mu.Lock()
@@ -229,13 +232,31 @@ func (rf *Raft) ticker() {
 			rf.mu.Lock()
 			if rf.role == Leader { // filter non-leader heartbeats
 				rf.resetHeartbeatTimer()
-				rf.sendAppendMsg()
+				rf.BroadcastAppendEntries(true)
 			}
 			rf.mu.Unlock()
 		}
 		time.Sleep(50 * time.Millisecond)
 
 	}
+}
+
+func (rf *Raft) replicator(peer int) {
+	rf.replicatorCond[peer].L.Lock()
+	defer rf.replicatorCond[peer].L.Unlock()
+
+	for !rf.killed() {
+		for !rf.needReplication(peer) {
+			rf.replicatorCond[peer].Wait()
+		}
+		rf.handleOneReplication(peer)
+	}
+}
+
+func (rf *Raft) needReplication(peer int) bool {
+	rf.mu.RLock()
+	defer rf.mu.RUnlock()
+	return rf.role == Leader && rf.matchIndex[peer] < rf.getLastLog().Index
 }
 
 //
@@ -269,10 +290,16 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		nextIndex:      make([]int, len(peers)),
 		matchIndex:     make([]int, len(peers)),
 		commitIndex:    InitLogIndex,
+		replicatorCond: make([]*sync.Cond, len(peers)),
 	}
 	// Your initialization code here (2A, 2B, 2C).
 	for i := range peers {
 		rf.nextIndex[i], rf.matchIndex[i] = InitLogIndex, InitLogIndex
+		if i != rf.me {
+			rf.replicatorCond[i] = sync.NewCond(&sync.Mutex{})
+			// start replicator
+			go rf.replicator(i)
+		}
 	}
 
 	// initialize from state persisted before a crash

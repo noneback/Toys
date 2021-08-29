@@ -118,6 +118,72 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	reply.Term, reply.Success = rf.term, true
 }
 
+func (rf *Raft) BroadcastAppendEntries(isHeartbeats bool) {
+	// hold lock
+	for p := range rf.peers {
+		if p == rf.me {
+			continue
+		}
+		if rf.role != Leader {
+			return
+		}
+		if isHeartbeats {
+			go rf.handleOneReplication(p)
+		} else {
+			// send to replicator
+			rf.replicatorCond[p].Signal()
+		}
+	}
+}
+
+// handleOneReplication append entries or heartbeat to one follower
+func (rf *Raft) handleOneReplication(peer int) {
+	// hold lock
+	req := rf.genAppendEntriesArgs(peer)
+	resp := &AppendEntriesReply{}
+
+	if rf.sendAppendEntries(peer, req, resp) {
+		rf.mu.Lock()
+		defer rf.mu.Unlock()
+		rf.handleAppendEntriesResponse(peer, req, resp)
+	}
+}
+
+func (rf *Raft) handleAppendEntriesResponse(peer int, req *AppendEntriesArgs, resp *AppendEntriesReply) {
+	if resp.Term > rf.term {
+		rf.newTerm(resp.Term, None)
+		rf.role = Follower
+	}
+
+	if rf.role != Leader || resp.Term < rf.term {
+		return
+	}
+
+	if resp.Success {
+		rf.nextIndex[peer] += len(req.Entries)
+		DPrintf("[][][] update nextIndex[%v]:%v\n", peer, rf.nextIndex[peer])
+		rf.matchIndex[peer] = rf.nextIndex[peer] - 1 // 另外开一个goroutine发送消息通知follower提交记录
+		// 更新提交信息
+		for i := rf.commitIndex + 1; i < len(rf.logs); i++ {
+			commitCnt := 1
+			for pr := range rf.peers {
+				if rf.matchIndex[pr] >= i {
+					commitCnt++
+				}
+			}
+			if commitCnt*2 > len(rf.peers) {
+				rf.commitIndex = i
+			}
+		}
+	} else {
+		// not success
+		if rf.nextIndex[peer] > InitLogIndex {
+			rf.nextIndex[peer]--
+			DPrintf("[drawback] node %v log conflict\n", rf.me)
+		}
+	}
+}
+
 func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 	return ok
@@ -146,7 +212,6 @@ func (rf *Raft) genAppendEntriesArgs(peer int) *AppendEntriesArgs {
 
 func (rf *Raft) sendAppendMsg() {
 	// has lock
-	ackCnt := 1
 	for p := range rf.peers {
 		if p == rf.me {
 			continue
@@ -154,51 +219,7 @@ func (rf *Raft) sendAppendMsg() {
 		if rf.role != Leader {
 			return
 		}
-
-		go func(peer int) {
-			// DPrintf("[goroutine] sendAppendMsg gen a go routine")
-			args := rf.genAppendEntriesArgs(peer)
-
-			var reply AppendEntriesReply
-			if ok := rf.sendAppendEntries(peer, args, &reply); ok {
-				rf.mu.Lock()
-				defer rf.mu.Unlock()
-
-				if reply.Term > rf.term {
-					rf.newTerm(reply.Term, None)
-					rf.role = Follower
-				}
-
-				if rf.role != Leader || reply.Term < rf.term {
-					return
-				}
-
-				if reply.Success {
-					ackCnt++
-					rf.nextIndex[peer] += len(args.Entries)
-					DPrintf("[][][] update nextIndex[%v]:%v\n", peer, rf.nextIndex[peer])
-					rf.matchIndex[peer] = rf.nextIndex[peer] - 1 // 另外开一个goroutine发送消息通知follower提交记录
-					// 更新提交信息
-					for i := rf.commitIndex + 1; i < len(rf.logs); i++ {
-						commitCnt := 1
-						for pr := range rf.peers {
-							if rf.matchIndex[pr] >= i {
-								commitCnt++
-							}
-						}
-						if commitCnt*2 > len(rf.peers) {
-							rf.commitIndex = i
-						}
-					}
-				} else {
-					// not success
-					if rf.nextIndex[peer] > InitLogIndex {
-						rf.nextIndex[peer]--
-						DPrintf("[drawback] node %v log conflict\n", rf.me)
-					}
-				}
-			}
-		}(p)
+		go rf.handleOneReplication(p)
 	}
 }
 
