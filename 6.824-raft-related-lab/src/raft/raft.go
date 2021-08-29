@@ -20,6 +20,7 @@ package raft
 import (
 	//	"bytes"
 
+	"fmt"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -77,11 +78,6 @@ type Raft struct {
 	electionTimer  *time.Timer
 	heartbeatTimer *time.Timer
 
-	roleMutex sync.Mutex
-
-	// Your data here (2A, 2B, 2C).
-	// Look at the paper's Figure 2 for a description of what
-	// state a Raft server must maintain.
 	logs        []*LogEntry
 	commitIndex int
 	lastApplied int
@@ -171,13 +167,29 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
+	// defer DPrintf("[Start] cmd :%+v\n", command)
+	term, isLeader := rf.GetState()
+	if !isLeader {
+		return None, term, isLeader
+	}
+	entry := rf.AppendLog(command)
 
-	// Your code here (2B).
+	rf.sendAppendMsg()
+	return entry.Index, term, isLeader
+}
 
-	return index, term, isLeader
+func (rf *Raft) AppendLog(cmd interface{}) *LogEntry {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	entry := &LogEntry{
+		Term:  rf.term,
+		Index: len(rf.logs),
+		Data:  []byte(fmt.Sprint(cmd)),
+	}
+
+	rf.logs = append(rf.logs, entry)
+	return entry
 }
 
 //

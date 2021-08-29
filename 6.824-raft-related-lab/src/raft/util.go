@@ -26,6 +26,13 @@ func NodesInfo(rfs []*Raft) {
 		for i, rf := range rfs {
 			t, isLeader := rf.GetState()
 			DPrintf("[info] Term %v node %v isLeader %v\n", t, i, isLeader)
+			LogsInfo(rf)
 		}
+	}
+}
+
+func LogsInfo(rf *Raft) {
+	for _, en := range rf.logs {
+		DPrintf("[Log] node %v in term %v, %+v\n", rf.me, rf.term, en)
 	}
 }

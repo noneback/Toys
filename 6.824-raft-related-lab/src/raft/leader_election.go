@@ -81,7 +81,7 @@ func (rf *Raft) startElection() {
 		}
 
 		go func(peer int) {
-			DPrintf("[goroutine] sendRequestVote gen a go routine")
+			// DPrintf("[goroutine] sendRequestVote gen a go routine")
 			var reply RequestVoteReply
 
 			if ok := rf.sendRequestVote(peer, args, &reply); ok {
