@@ -234,3 +234,22 @@ func (rf *Raft) matchLog(term, index int) bool {
 	}
 	return len(rf.logs) == 0 || rf.logs[index].Term == term
 }
+
+// replicator a goroutine that use to replicate logEntry to peer
+func (rf *Raft) replicator(peer int) {
+	rf.replicatorCond[peer].L.Lock()
+	defer rf.replicatorCond[peer].L.Unlock()
+
+	for !rf.killed() {
+		for !rf.needReplication(peer) {
+			rf.replicatorCond[peer].Wait()
+		}
+		rf.handleOneReplication(peer)
+	}
+}
+
+func (rf *Raft) needReplication(peer int) bool {
+	rf.mu.RLock()
+	defer rf.mu.RUnlock()
+	return rf.role == Leader && rf.matchIndex[peer] < rf.getLastLog().Index
+}

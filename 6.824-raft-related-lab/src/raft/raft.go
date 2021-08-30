@@ -177,7 +177,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	}
 	entry := rf.appendLog(command)
 
-	rf.sendAppendMsg()
+	rf.BroadcastAppendEntries(false)
 	return entry.Index, term, isLeader
 }
 
@@ -239,24 +239,6 @@ func (rf *Raft) ticker() {
 		time.Sleep(50 * time.Millisecond)
 
 	}
-}
-
-func (rf *Raft) replicator(peer int) {
-	rf.replicatorCond[peer].L.Lock()
-	defer rf.replicatorCond[peer].L.Unlock()
-
-	for !rf.killed() {
-		for !rf.needReplication(peer) {
-			rf.replicatorCond[peer].Wait()
-		}
-		rf.handleOneReplication(peer)
-	}
-}
-
-func (rf *Raft) needReplication(peer int) bool {
-	rf.mu.RLock()
-	defer rf.mu.RUnlock()
-	return rf.role == Leader && rf.matchIndex[peer] < rf.getLastLog().Index
 }
 
 //
