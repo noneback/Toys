@@ -4,10 +4,6 @@ import (
 	"crypto/md5"
 )
 
-// type Hasher interface {
-// 	Hash(key string) uint64
-// }
-
 type Hasher func(key []byte) uint64
 
 func hex2Uint64(raw []byte) uint64 {

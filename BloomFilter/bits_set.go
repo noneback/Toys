@@ -42,19 +42,25 @@ func NewBitSet(bits uint64) *BitSet {
 	return bs
 }
 
+// locate change pos to idx of bytes and offset
 func (b *BitSet) locate(pos uint64) (uint64, uint64) {
 	return pos / ByteBits, pos % ByteBits
 }
 
+// Get return the bit val in pos
 func (b *BitSet) Get(pos uint64) uint64 {
 	idx, offset := b.locate(pos)
 	b.bkt[idx].rwlck.RLock()
 	defer b.bkt[idx].rwlck.RUnlock()
 
 	mask := uint8(1) << offset
-	return uint64(b.bkt[idx].b & mask)
+	if uint64(b.bkt[idx].b&mask) > 1 {
+		return BitOne
+	}
+	return BitZero
 }
 
+// Set set bit val
 func (b *BitSet) Set(pos uint64, val uint64) {
 	idx, offset := b.locate(pos)
 	b.bkt[idx].rwlck.Lock()
