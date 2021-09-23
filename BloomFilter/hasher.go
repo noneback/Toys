@@ -4,15 +4,11 @@ import (
 	"crypto/md5"
 )
 
-type Hasher func(key string) int64
+// type Hasher interface {
+// 	Hash(key string) uint64
+// }
 
-func Hash(key string) uint64 {
-	buckets := 1232
-	c := md5.New()
-	c.Write([]byte(key))
-	raw := c.Sum([]byte(""))
-	return hex2Uint64(raw) % uint64(buckets)
-}
+type Hasher func(key []byte) uint64
 
 func hex2Uint64(raw []byte) uint64 {
 	ans := uint64(0)
@@ -20,4 +16,11 @@ func hex2Uint64(raw []byte) uint64 {
 		ans += uint64(v)
 	}
 	return ans
+}
+
+func Hash(key []byte) uint64 {
+	c := md5.New()
+	c.Write(key)
+	raw := c.Sum([]byte(""))
+	return hex2Uint64(raw)
 }
