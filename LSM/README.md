@@ -1,3 +1,3 @@
 # LSM engine
-A simple implementaton of a shorage engine based on lsm
+A basic implementaton of a shorage engine based on lsm
 
