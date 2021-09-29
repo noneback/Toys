@@ -52,14 +52,13 @@ func TestInsert(t *testing.T) {
 	}
 }
 
-// func TestSkiplistShow(t *testing.T) {
-// 	sl := NewSkipList()
-// 	rand.Seed(time.Now().Unix())
-// 	for i := 0; i < 200; i++ {
-// 		val := uint32(rand.Int() % 100000)
-// 		fmt.Println("[]", val)
-// 		sl.Insert(encode(val))
-// 	}
+func TestSkiplistShow(t *testing.T) {
+	sl := NewSkipList()
+	rand.Seed(time.Now().Unix())
+	for i := 0; i < 200; i++ {
+		val := uint32(rand.Int() % 100000)
+		sl.Insert(encode(val))
+	}
 
-// 	sl.Show()
-// }
+	sl.Show()
+}
