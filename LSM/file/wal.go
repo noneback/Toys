@@ -41,6 +41,7 @@ func (w *WAL) Close() error {
 	if err := w.f.Close(); err != nil {
 		return err
 	}
+
 	return nil
 }
 

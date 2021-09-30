@@ -1,6 +1,7 @@
 package lsm
 
 import (
+	"log"
 	"lsm/file"
 	"lsm/skiplist"
 )
@@ -10,6 +11,20 @@ type memtable struct {
 	sl  *skiplist.SkipList
 }
 
-func Newmemtable() *memtable {
-	return nil
+type MemtableOption struct {
+	WALOpt *file.Option
 }
+
+func Newmemtable(opt *MemtableOption) *memtable {
+	wal, err := file.NewWAL(opt.WALOpt)
+	if err != nil {
+		log.Fatal("Create WAL failed", err)
+	}
+	return &memtable{
+		wal: wal,
+		sl:  skiplist.NewSkipList(),
+	}
+}
+
+func (m *memtable) Set() {}
+func (m *memtable) Get() {}
