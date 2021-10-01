@@ -20,7 +20,7 @@ func (e *Entry) Encode() []byte {
 	if err != nil {
 		log.Fatal(err)
 	}
-	return raw
+	return append(raw, byte('\n'))
 }
 
 func (e *Entry) Decode(data []byte, v interface{}) error {
