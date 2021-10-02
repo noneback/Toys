@@ -60,11 +60,12 @@ func (w *WAL) Append(entry *codec.Entry) (int, error) {
 	return w.rw.Write(append(entry.Encode()))
 }
 
-// Read read log[idx]
+// Read read log[idx], TODO: require enhancement
 func (w *WAL) Read(idx int) ([]byte, error) {
 	if _, err := w.f.Seek(0, 0); err != nil {
 		return nil, err
 	}
+
 	raw := make([]byte, 0)
 	var err error
 	for i := 0; i < idx; i++ {

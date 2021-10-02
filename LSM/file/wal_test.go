@@ -19,6 +19,7 @@ func TestWALAppend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error: create wal failed")
 	}
+	defer os.Remove(opt.Path)
 	defer wal.Close()
 	e := utils.MockEntry(1)
 	n, err := wal.Append(e)

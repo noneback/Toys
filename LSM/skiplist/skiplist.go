@@ -39,6 +39,11 @@ type SkipList struct {
 	rwmtx        *sync.RWMutex
 }
 
+type SkipListOption struct {
+	MaxSize  int
+	MaxLevel int
+}
+
 func NewSkipListNode(levelNum int, data *codec.Entry) *SkipListNode {
 	sln := &SkipListNode{
 		nextPtrs: make([]*SkipListNode, levelNum),
@@ -91,6 +96,11 @@ func (sl *SkipList) Insert(data *codec.Entry) *SkipListNode {
 	return n
 }
 
+// Read get the entry if exists
+func (sl *SkipList) Read(key []byte) (*codec.Entry, bool) {
+	return nil, false
+}
+
 // random level determines which level should insert a ptr
 func (sl *SkipList) randomLevel() int {
 	ans := 1
@@ -108,6 +118,7 @@ func (sl *SkipList) Update(d *codec.Entry) bool {
 	return true
 }
 
+// Show show skiplist in console
 func (sl *SkipList) Show() {
 	for i := 0; i < sl.level; i++ {
 		h := sl.header
@@ -118,4 +129,8 @@ func (sl *SkipList) Show() {
 		}
 		fmt.Printf("[end]\n")
 	}
+}
+
+func (sl *SkipList) Size() int {
+	return sl.size
 }
