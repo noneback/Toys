@@ -24,7 +24,7 @@ func Newmemtable(opt *MemtableOption) *memtable {
 	}
 	return &memtable{
 		wal: wal,
-		sl:  skiplist.NewSkipList(),
+		sl:  skiplist.NewSkipList(nil),
 	}
 }
 

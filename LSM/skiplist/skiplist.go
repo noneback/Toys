@@ -1,6 +1,7 @@
 package skiplist
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"lsm/codec"
@@ -9,8 +10,7 @@ import (
 )
 
 type Sequencer interface {
-	Create()
-	Read()
+	Get()
 	Update()
 	Delete()
 }
@@ -18,6 +18,7 @@ type Sequencer interface {
 const (
 	defaultMaxLevel = 48
 	defaultLevel    = 1
+	defaultMaxSize  = 100
 )
 
 var (
@@ -37,10 +38,11 @@ type SkipList struct {
 	level        int
 	size         int
 	rwmtx        *sync.RWMutex
+	maxSize      int
 }
 
 type SkipListOption struct {
-	MaxSize  int
+	// MaxSize  int
 	MaxLevel int
 }
 
@@ -52,14 +54,30 @@ func NewSkipListNode(levelNum int, data *codec.Entry) *SkipListNode {
 	return sln
 }
 
-func NewSkipList() *SkipList {
+func NewSkipList(opt *SkipListOption) *SkipList {
+	maxLevel := defaultMaxLevel
+	if opt != nil && opt.MaxLevel > 0 {
+		maxLevel = opt.MaxLevel
+	}
+
 	sl := &SkipList{
 		level:  defaultLevel,
-		header: NewSkipListNode(defaultMaxLevel, nil),
+		header: NewSkipListNode(maxLevel, nil),
 		size:   0,
 		rwmtx:  &sync.RWMutex{},
 	}
 	return sl
+}
+
+// findPreNode find the node before node.key
+func (sl *SkipList) findPreNode(key []byte) (*SkipListNode, bool) {
+	// from top to bottom
+	for i := sl.level - 1; i >= 0; i-- {
+		if node, ok := sl.findLevelPreNode(i, key); ok {
+			return node, ok
+		}
+	}
+	return nil, false
 }
 
 func (sl *SkipList) Insert(data *codec.Entry) *SkipListNode {
@@ -97,8 +115,15 @@ func (sl *SkipList) Insert(data *codec.Entry) *SkipListNode {
 }
 
 // Read get the entry if exists
-func (sl *SkipList) Read(key []byte) (*codec.Entry, bool) {
-	return nil, false
+func (sl *SkipList) Get(key []byte) (*codec.Entry, bool) {
+	sl.rwmtx.RLock()
+	defer sl.rwmtx.RUnlock()
+
+	node, ok := sl.findPreNode(key)
+	if !ok {
+		return nil, ok
+	}
+	return node.data, true
 }
 
 // random level determines which level should insert a ptr
@@ -110,11 +135,40 @@ func (sl *SkipList) randomLevel() int {
 	return ans
 }
 
-func (sl *SkipList) Delete(d *codec.Entry) bool {
-	return true
+// findLevelPreNode find the node before key in level
+func (sl *SkipList) findLevelPreNode(level int, key []byte) (*SkipListNode, bool) {
+	h := sl.header
+	for h.nextPtrs[level] != nil && bytes.Compare(key, h.nextPtrs[level].data.Key) != 1 {
+		if bytes.Equal(h.nextPtrs[level].data.Key, key) {
+			return h, true
+		}
+		h = h.nextPtrs[level]
+	}
+	return nil, false
 }
 
-func (sl *SkipList) Update(d *codec.Entry) bool {
+// Delete delete node of key
+func (sl *SkipList) Delete(key []byte) bool {
+	sl.rwmtx.Lock()
+	defer sl.rwmtx.Unlock()
+
+	hasFound := false
+	// TODO: remove all level ptr
+	for i := 0; i < sl.level; i++ {
+		if node, ok := sl.findLevelPreNode(i, key); ok {
+			node.nextPtrs[i] = node.nextPtrs[i].nextPtrs[i]
+			hasFound = true
+		}
+	}
+	return hasFound
+}
+
+func (sl *SkipList) Update(k, v []byte) bool {
+	node, ok := sl.findPreNode(k)
+	if !ok {
+		return false
+	}
+	node.nextPtrs[0].data.Value = v
 	return true
 }
 

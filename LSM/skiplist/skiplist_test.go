@@ -24,7 +24,7 @@ func encode(val uint32) *codec.Entry {
 }
 
 func TestInsert(t *testing.T) {
-	sl := NewSkipList()
+	sl := NewSkipList(nil)
 	rand.Seed(time.Now().Unix())
 	wg := sync.WaitGroup{}
 	for i := 0; i < 200; i++ {
@@ -53,7 +53,7 @@ func TestInsert(t *testing.T) {
 }
 
 func TestSkiplistShow(t *testing.T) {
-	sl := NewSkipList()
+	sl := NewSkipList(nil)
 	rand.Seed(time.Now().Unix())
 	for i := 0; i < 200; i++ {
 		val := uint32(rand.Int() % 100000)
