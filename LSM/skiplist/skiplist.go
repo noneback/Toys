@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log"
+
 	"lsm/codec"
 	"math/rand"
 	"sync"
@@ -74,7 +76,7 @@ func (sl *SkipList) findPreNode(key []byte) (*SkipListNode, bool) {
 	// from top to bottom
 	for i := sl.level - 1; i >= 0; i-- {
 		if node, ok := sl.findLevelPreNode(i, key); ok {
-			return node, ok
+			return node, true
 		}
 	}
 	return nil, false
@@ -121,9 +123,9 @@ func (sl *SkipList) Get(key []byte) (*codec.Entry, bool) {
 
 	node, ok := sl.findPreNode(key)
 	if !ok {
-		return nil, ok
+		return nil, false
 	}
-	return node.data, true
+	return node.nextPtrs[0].data, true
 }
 
 // random level determines which level should insert a ptr
@@ -138,7 +140,8 @@ func (sl *SkipList) randomLevel() int {
 // findLevelPreNode find the node before key in level
 func (sl *SkipList) findLevelPreNode(level int, key []byte) (*SkipListNode, bool) {
 	h := sl.header
-	for h.nextPtrs[level] != nil && bytes.Compare(key, h.nextPtrs[level].data.Key) != 1 {
+	for h.nextPtrs[level] != nil && bytes.Compare(h.nextPtrs[level].data.Key, key) != 1 {
+		log.Printf("[findlevel] %+v\n", string(h.nextPtrs[level].data.Key))
 		if bytes.Equal(h.nextPtrs[level].data.Key, key) {
 			return h, true
 		}
@@ -160,6 +163,12 @@ func (sl *SkipList) Delete(key []byte) bool {
 			hasFound = true
 		}
 	}
+
+	defer func() {
+		if hasFound {
+			sl.size--
+		}
+	}()
 	return hasFound
 }
 
@@ -178,7 +187,7 @@ func (sl *SkipList) Show() {
 		h := sl.header
 		fmt.Println("[level]", i)
 		for h.nextPtrs[i] != nil {
-			fmt.Printf("{%v} -> ", h.nextPtrs[i].data.Key)
+			fmt.Printf("{%v} -> ", h.nextPtrs[i].data.ToString())
 			h = h.nextPtrs[i]
 		}
 		fmt.Printf("[end]\n")

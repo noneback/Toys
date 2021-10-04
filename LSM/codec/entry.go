@@ -2,6 +2,7 @@ package codec
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 )
 
@@ -25,4 +26,11 @@ func (e *Entry) Encode() []byte {
 
 func (e *Entry) Decode(data []byte, v interface{}) error {
 	return defaultCodec.Decode(data, v)
+}
+
+func (e *Entry) ToString() string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("[key : %v, value : %v]", string(e.Key), string(e.Value))
 }
