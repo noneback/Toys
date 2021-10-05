@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"log"
+	"time"
 
 	"lsm/codec"
 	"math/rand"
@@ -131,6 +131,7 @@ func (sl *SkipList) Get(key []byte) (*codec.Entry, bool) {
 // random level determines which level should insert a ptr
 func (sl *SkipList) randomLevel() int {
 	ans := 1
+	rand.Seed(time.Now().Unix())
 	for rand.Intn(2) == 0 && ans <= defaultMaxLevel {
 		ans++
 	}
@@ -141,7 +142,6 @@ func (sl *SkipList) randomLevel() int {
 func (sl *SkipList) findLevelPreNode(level int, key []byte) (*SkipListNode, bool) {
 	h := sl.header
 	for h.nextPtrs[level] != nil && bytes.Compare(h.nextPtrs[level].data.Key, key) != 1 {
-		log.Printf("[findlevel] %+v\n", string(h.nextPtrs[level].data.Key))
 		if bytes.Equal(h.nextPtrs[level].data.Key, key) {
 			return h, true
 		}

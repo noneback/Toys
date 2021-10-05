@@ -46,6 +46,9 @@ func (w *WAL) Close() error {
 }
 
 func (w *WAL) Flush() {
+	w.rwmtx.Lock()
+	defer w.rwmtx.Unlock()
+
 	if err := w.rw.Flush(); err != nil {
 		log.Fatalf("flush error : %v", err)
 	}

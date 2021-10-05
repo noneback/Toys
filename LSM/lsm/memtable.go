@@ -7,7 +7,7 @@ import (
 	"lsm/skiplist"
 )
 
-type memtable struct {
+type Memtable struct {
 	wal *file.WAL
 	sl  *skiplist.SkipList
 }
@@ -17,40 +17,41 @@ type MemtableOption struct {
 	MaxKVSize int
 }
 
-func Newmemtable(opt *MemtableOption) *memtable {
+func Newmemtable(opt *MemtableOption) *Memtable {
 	wal, err := file.NewWAL(opt.WALOpt)
 	if err != nil {
 		log.Fatal("Create WAL failed", err)
 	}
-	return &memtable{
+	return &Memtable{
 		wal: wal,
 		sl:  skiplist.NewSkipList(nil),
 	}
 }
 
-func (m *memtable) Set(e *codec.Entry) error {
+func (m *Memtable) Set(e *codec.Entry) error {
 	// write to WAL file
 	if _, err := m.wal.Append(e); err != nil {
 		return err
 	}
+	defer m.wal.Flush()
 	// 2. write to skiplist
 	m.sl.Insert(e)
 	// TODO:whether need to turn into a immutable
 	return nil
 }
 
-func (m *memtable) Get(key []byte) (*codec.Entry, bool) {
+func (m *Memtable) Get(key []byte) (*codec.Entry, bool) {
 	// Get from skiplist
-	return nil, false
+	return m.sl.Get(key)
 }
 
-func (m *memtable) Size() int {
+func (m *Memtable) Size() int {
 	return m.sl.Size()
 }
 
 // TODO: recovery recover from the WAL file
-func recovery()
+func (m *Memtable) recovery() {}
 
-func (m *memtable) Close() {
+func (m *Memtable) Close() {
 	m.wal.Close()
 }
