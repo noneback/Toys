@@ -74,11 +74,16 @@ func NewSkipList(opt *SkipListOption) *SkipList {
 // findPreNode find the node before node.key
 func (sl *SkipList) findPreNode(key []byte) (*SkipListNode, bool) {
 	// from top to bottom
+	h := sl.header
 	for i := sl.level - 1; i >= 0; i-- {
-		if node, ok := sl.findLevelPreNode(i, key); ok {
-			return node, true
+		for h.nextPtrs[i] != nil && bytes.Compare(h.nextPtrs[i].data.Key, key) != 1 {
+			if bytes.Equal(h.nextPtrs[i].data.Key, key) {
+				return h, true
+			}
+			h = h.nextPtrs[i]
 		}
 	}
+
 	return nil, false
 }
 
@@ -112,7 +117,6 @@ func (sl *SkipList) Insert(data *codec.Entry) *SkipListNode {
 		updateNode[i].nextPtrs[i] = n
 	}
 	sl.size++
-
 	return n
 }
 
@@ -157,6 +161,7 @@ func (sl *SkipList) Delete(key []byte) bool {
 
 	hasFound := false
 	// TODO: remove all level ptr
+
 	for i := 0; i < sl.level; i++ {
 		if node, ok := sl.findLevelPreNode(i, key); ok {
 			node.nextPtrs[i] = node.nextPtrs[i].nextPtrs[i]
