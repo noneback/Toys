@@ -20,6 +20,7 @@ package raft
 import (
 	//	"bytes"
 
+	"fmt"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -77,16 +78,14 @@ type Raft struct {
 	electionTimer  *time.Timer
 	heartbeatTimer *time.Timer
 
-	roleMutex sync.Mutex
-
-	// Your data here (2A, 2B, 2C).
-	// Look at the paper's Figure 2 for a description of what
-	// state a Raft server must maintain.
 	logs        []*LogEntry
 	commitIndex int
 	lastApplied int
 	nextIndex   []int
 	matchIndex  []int
+
+	replicatorCond []*sync.Cond
+	applyCond      *sync.Cond
 }
 
 // return currentTerm and whether this server
@@ -171,13 +170,29 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
+	// defer DPrintf("[Start] cmd :%+v\n", command)
+	term, isLeader := rf.GetState()
+	if !isLeader {
+		return None, term, isLeader
+	}
+	entry := rf.appendLog(command)
 
-	// Your code here (2B).
+	rf.BroadcastAppendEntries(false)
+	return entry.Index, term, isLeader
+}
 
-	return index, term, isLeader
+func (rf *Raft) appendLog(cmd interface{}) *LogEntry {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	entry := &LogEntry{
+		Term:  rf.term,
+		Index: len(rf.logs),
+		Data:  []byte(fmt.Sprint(cmd)),
+	}
+
+	rf.logs = append(rf.logs, entry)
+	return entry
 }
 
 //
@@ -202,7 +217,7 @@ func (rf *Raft) killed() bool {
 }
 
 func (rf *Raft) ticker() {
-	for rf.killed() == false {
+	for !rf.killed() {
 		select {
 		case <-rf.electionTimer.C:
 			rf.mu.Lock()
@@ -217,7 +232,7 @@ func (rf *Raft) ticker() {
 			rf.mu.Lock()
 			if rf.role == Leader { // filter non-leader heartbeats
 				rf.resetHeartbeatTimer()
-				rf.sendAppendMsg()
+				rf.BroadcastAppendEntries(true)
 			}
 			rf.mu.Unlock()
 		}
@@ -257,10 +272,16 @@ func Make(peers []*labrpc.ClientEnd, me int,
 		nextIndex:      make([]int, len(peers)),
 		matchIndex:     make([]int, len(peers)),
 		commitIndex:    InitLogIndex,
+		replicatorCond: make([]*sync.Cond, len(peers)),
 	}
 	// Your initialization code here (2A, 2B, 2C).
 	for i := range peers {
 		rf.nextIndex[i], rf.matchIndex[i] = InitLogIndex, InitLogIndex
+		if i != rf.me {
+			rf.replicatorCond[i] = sync.NewCond(&sync.Mutex{})
+			// start replicator
+			go rf.replicator(i)
+		}
 	}
 
 	// initialize from state persisted before a crash

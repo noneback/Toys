@@ -1,5 +1,0 @@
-cmake_minimum_required(VERSION 3.16)
-project(json_rpc)
-set(CMAKE_CXX_STANDARD 14)
-add_executable(json_rpc main.cpp Server.cpp Server.h json.h Client.cpp Client.h shared.h)
-target_link_libraries(json_rpc pthread)

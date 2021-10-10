@@ -16,7 +16,7 @@ func RandomizedElectionTimeout() time.Duration {
 }
 
 func (rf *Raft) resetElectionTimer() {
-	defer DPrintf("[timer] node %v reset Election timer\n", rf.me)
+	// defer DPrintf("[timer] node %v reset Election timer\n", rf.me)
 	if rf.role == Leader {
 		return
 	}
@@ -24,6 +24,6 @@ func (rf *Raft) resetElectionTimer() {
 }
 
 func (rf *Raft) resetHeartbeatTimer() {
-	defer DPrintf("[timer] node %v reset Heartbeats timer\n", rf.me)
+	// defer DPrintf("[timer] node %v reset Heartbeats timer\n", rf.me)
 	rf.heartbeatTimer.Reset(HeartBeatsTimeout)
 }

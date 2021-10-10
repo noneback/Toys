@@ -84,8 +84,6 @@ func TestReElection2A(t *testing.T) {
 	DPrintf("leader connected %v\n", leader1)
 	NodesInfo(cfg.rafts)
 	leader2 := cfg.checkOneLeader()
-	//time.Sleep(2 * HeartBeatsTimeout)
-	// todo
 	// if there's no quorum, no leader should
 	// be elected.
 	cfg.disconnect(leader2)
@@ -160,6 +158,7 @@ func TestBasicAgree2B(t *testing.T) {
 
 	iters := 3
 	for index := 1; index < iters+1; index++ {
+		DPrintf("\n[test] iter %v\n", index)
 		nd, _ := cfg.nCommitted(index)
 		if nd > 0 {
 			t.Fatalf("some have committed before Start()")

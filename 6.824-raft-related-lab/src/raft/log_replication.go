@@ -41,6 +41,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	defer DPrintf("[append] %v %v receive AppendEntries in Term %v, req %+v resp %+v\n", rf.role, rf.me, rf.term, args, reply)
+	// defer LogsInfo(rf)
 	// filter all Msg from the past
 	if args.Term < rf.term {
 		reply.Term, reply.Success = rf.term, false
@@ -51,9 +52,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.newTerm(args.Term, args.LeaderID)
 	}
 
-	if rf.role != Follower {
-		DPrintf("[role] %v : %v change to Follower in term %v from leader %v\n", rf.role, rf.me, rf.term, args.LeaderID)
-	}
+	// if rf.role != Follower {
+	// 	DPrintf("[role] %v : %v change to Follower in term %v from leader %v\n", rf.role, rf.me, rf.term, args.LeaderID)
+	// }
 
 	rf.role = Follower
 	rf.resetElectionTimer()
@@ -66,19 +67,20 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	// if log matches at beginning
-	var newEntries []*LogEntry
-	lastLog := rf.getLastLog()
+	newEntries := args.Entries
 	if len(args.Entries) != 0 {
 		// not heartbeats
 		// delete conflict logs
 		for i, log := range args.Entries {
+			lastLog := rf.getLastLog()
+
 			if log.Index > lastLog.Index {
 				// all args.Entries is new logEntry
-				// newEntries = args.Entries[i:]
 				break
 			}
 			// delete mismatched log and ignore duplicated log
 			if log.Term != rf.logs[log.Index].Term {
+				// mismatch
 				rf.logs = rf.logs[:log.Index]
 			}
 			// update new Entries
@@ -88,6 +90,10 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	if len(newEntries) != 0 {
 		rf.logs = append(rf.logs, newEntries...)
+	}
+
+	if args.LeaderCommit > rf.commitIndex {
+		rf.commitIndex = Min(args.LeaderCommit, rf.getLastLog().Index)
 	}
 	//TODO
 
@@ -108,23 +114,12 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	//// append entries rule 4
 	//rf.logs = append(rf.logs, args.Entries...)
 	//// rule 5
-	//if args.LeaderCommit > rf.commitIndex {
-	//	rf.commitIndex = Min(args.LeaderCommit, rf.getLastLog().index)
-	//}
 
 	reply.Term, reply.Success = rf.term, true
 }
 
-func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
-	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
-	return ok
-}
-
-func (rf *Raft) sendAppendMsg() {
-	// has lock
-
-	ackCnt := 1
-
+func (rf *Raft) BroadcastAppendEntries(isHeartbeats bool) {
+	// hold lock
 	for p := range rf.peers {
 		if p == rf.me {
 			continue
@@ -132,71 +127,129 @@ func (rf *Raft) sendAppendMsg() {
 		if rf.role != Leader {
 			return
 		}
+		if isHeartbeats {
+			go rf.handleOneReplication(p)
+		} else {
+			// send to replicator
+			rf.replicatorCond[p].Signal()
+		}
+	}
+}
 
-		go func(peer int) {
-			DPrintf("[goroutine] sendAppendMsg gen a go routine")
-			rf.mu.RLock()
-			args := &AppendEntriesArgs{
-				Term:         rf.term,
-				LeaderID:     rf.me,
-				PrevLogIndex: rf.nextIndex[p] - 1,
-				PrevLogTerm:  -1,
-				Entries:      rf.logs[rf.nextIndex[p]:],
-			}
-			if len(rf.logs) != 0 {
-				args.PrevLogTerm = rf.logs[args.PrevLogIndex].Term
-			}
-			rf.mu.RUnlock()
+// handleOneReplication append entries or heartbeat to one follower
+func (rf *Raft) handleOneReplication(peer int) {
+	// hold lock
+	req := rf.genAppendEntriesArgs(peer)
+	resp := &AppendEntriesReply{}
 
-			var reply AppendEntriesReply
-			if ok := rf.sendAppendEntries(peer, args, &reply); ok {
-				rf.mu.Lock()
-				defer rf.mu.Unlock()
+	if rf.sendAppendEntries(peer, req, resp) {
+		rf.mu.Lock()
+		defer rf.mu.Unlock()
+		rf.handleAppendEntriesResponse(peer, req, resp)
+	}
+}
 
-				if reply.Term > rf.term {
-					rf.newTerm(reply.Term, None)
-					rf.role = Follower
-				}
+func (rf *Raft) handleAppendEntriesResponse(peer int, req *AppendEntriesArgs, resp *AppendEntriesReply) {
+	if resp.Term > rf.term {
+		rf.newTerm(resp.Term, None)
+		rf.role = Follower
+	}
 
-				if rf.role != Leader || reply.Term < rf.term {
-					return
-				}
+	if rf.role != Leader || resp.Term < rf.term {
+		return
+	}
 
-				if reply.Success {
-					ackCnt++
-					rf.nextIndex[p] += len(args.Entries)
-					rf.matchIndex[p] = rf.nextIndex[p] - 1 // 另外开一个goroutine发送消息通知follower提交记录
-					// 更新提交信息
-					for i := rf.commitIndex + 1; i < len(rf.logs); i++ {
-						commitCnt := 1
-						for pr := range rf.peers {
-							if rf.matchIndex[pr] >= i {
-								commitCnt++
-							}
-						}
-						if commitCnt*2 > len(rf.peers) {
-							rf.commitIndex = i
-						}
-					}
-
-				} else {
-					// not success
-					if rf.nextIndex[p] > InitLogIndex {
-						rf.nextIndex[p]--
-					}
+	if resp.Success {
+		rf.nextIndex[peer] += len(req.Entries)
+		DPrintf("[][][] update nextIndex[%v]:%v\n", peer, rf.nextIndex[peer])
+		rf.matchIndex[peer] = rf.nextIndex[peer] - 1 // 另外开一个goroutine发送消息通知follower提交记录
+		// 更新提交信息
+		for i := rf.commitIndex + 1; i < len(rf.logs); i++ {
+			commitCnt := 1
+			for pr := range rf.peers {
+				if rf.matchIndex[pr] >= i {
+					commitCnt++
 				}
 			}
-		}(p)
+			if commitCnt*2 > len(rf.peers) {
+				rf.commitIndex = i
+			}
+		}
+	} else {
+		// not success
+		if rf.nextIndex[peer] > InitLogIndex {
+			rf.nextIndex[peer]--
+			DPrintf("[drawback] node %v log conflict\n", rf.me)
+		}
+	}
+}
+
+func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
+	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+	return ok
+}
+
+func (rf *Raft) genAppendEntriesArgs(peer int) *AppendEntriesArgs {
+	rf.mu.RLock()
+	defer rf.mu.RUnlock()
+
+	args := &AppendEntriesArgs{
+		Term:         rf.term,
+		LeaderID:     rf.me,
+		PrevLogIndex: rf.nextIndex[peer] - 1,
+		PrevLogTerm:  -1,
+		LeaderCommit: rf.commitIndex,
+	}
+
+	if len(rf.logs) >= rf.nextIndex[peer] {
+		args.Entries = rf.logs[rf.nextIndex[peer]:]
+	}
+	if len(rf.logs) != 0 && args.PrevLogIndex >= 0 {
+		args.PrevLogTerm = rf.logs[args.PrevLogIndex].Term
+	}
+	return args
+}
+
+func (rf *Raft) sendAppendMsg() {
+	// has lock
+	for p := range rf.peers {
+		if p == rf.me {
+			continue
+		}
+		if rf.role != Leader {
+			return
+		}
+		go rf.handleOneReplication(p)
 	}
 }
 
 func (rf *Raft) matchLog(term, index int) bool {
 	if index < 0 {
+		// means that init
 		return true
 	}
 
 	if len(rf.logs) < index {
 		return false
 	}
-	return rf.logs[index].Term == term
+	return len(rf.logs) == 0 || rf.logs[index].Term == term
+}
+
+// replicator a goroutine that use to replicate logEntry to peer
+func (rf *Raft) replicator(peer int) {
+	rf.replicatorCond[peer].L.Lock()
+	defer rf.replicatorCond[peer].L.Unlock()
+
+	for !rf.killed() {
+		for !rf.needReplication(peer) {
+			rf.replicatorCond[peer].Wait()
+		}
+		rf.handleOneReplication(peer)
+	}
+}
+
+func (rf *Raft) needReplication(peer int) bool {
+	rf.mu.RLock()
+	defer rf.mu.RUnlock()
+	return rf.role == Leader && rf.matchIndex[peer] < rf.getLastLog().Index
 }
