@@ -1,0 +1,3 @@
+[submodule "JSON-RPC"]
+	path = JSON-RPC
+	url = git@github.com:noneback/JSON-RPC.git
