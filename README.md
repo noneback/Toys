@@ -1,3 +1,3 @@
 # Toys
-
-- These toys are from my homework lab or practice 
+- These toys are derived from my homework lab or practice
+- No guarantee for bug-free
