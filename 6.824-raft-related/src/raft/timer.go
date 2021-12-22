@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	HeartBeatsTimeout = time.Duration(100) * time.Microsecond
+	HeartBeatsTimeout = time.Duration(100) * time.Millisecond
 )
 
 func GetHeartbeatTimeout() time.Duration {
