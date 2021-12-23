@@ -76,10 +76,10 @@ func (rf *Raft) RequestVote(req *RequestVoteArgs, resp *RequestVoteReply) {
 	}
 
 	// check if candidate log catches up
-	// if !rf.isLogUpToDateL(req.LastLogTerm, req.LastLogIndex) {
-	// 	resp.Term, resp.VoteGranted = rf.currentTerm, false
-	// 	return
-	// }
+	if !rf.isLogUpToDateL(req.LastLogTerm, req.LastLogIndex) {
+		resp.Term, resp.VoteGranted = rf.currentTerm, false
+		return
+	}
 	// vote for candidate and reset election timer
 	rf.votedFor = req.CandidateID
 	rf.resetElectionTimerL()

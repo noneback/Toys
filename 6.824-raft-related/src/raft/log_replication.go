@@ -29,8 +29,10 @@ func (rf *Raft) replicateOneRound(peer int) {
 		rf.mu.Unlock()
 		return
 	}
+	DPrintf("[][][] rf.nextIndex %+v", rf.nextIndex)
 	prevLogIndex := rf.nextIndex[peer] - 1
 	req := rf.genAppendEntriesArgsL(prevLogIndex)
+	
 	DPrintf("[ReplicateOneRound] Node %v send AppendEntriesRpc to Node %v with req %+v", rf.me, peer, req)
 	rf.mu.Unlock()
 
@@ -89,7 +91,7 @@ func (rf *Raft) handleAppendEntriesRespL(peer int, req *AppendEntriesArgs, resp 
 			// out-dated term msg, turn to follower
 			rf.ChangeStateL(StateFollower)
 			rf.currentTerm, rf.votedFor = resp.Term, -1
-		} else if resp.Term == rf.commitIndex {
+		} else if resp.Term == rf.currentTerm {
 			// failed because of log inconsistences
 			// NOTICE:
 			rf.nextIndex[peer] = resp.ConflictIndex
