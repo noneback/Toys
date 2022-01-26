@@ -418,12 +418,13 @@ func TestBackup2B(t *testing.T) {
 
 	// put leader and one follower in a partition
 	leader1 := cfg.checkOneLeader()
+	// fmt.Println("leader1 ", leader1)
 	cfg.disconnect((leader1 + 2) % servers)
 	cfg.disconnect((leader1 + 3) % servers)
 	cfg.disconnect((leader1 + 4) % servers)
 
 	// submit lots of commands that won't commit
-	for i := 0; i < 50; i++ {
+	for i := 0; i < 3; i++ {
 		cfg.rafts[leader1].Start(rand.Int())
 	}
 
@@ -438,20 +439,22 @@ func TestBackup2B(t *testing.T) {
 	cfg.connect((leader1 + 4) % servers)
 
 	// lots of successful commands to new group.
-	for i := 0; i < 50; i++ {
+	for i := 0; i < 3; i++ {
 		cfg.one(rand.Int(), 3, true)
 	}
 
 	// now another partitioned leader and one follower
 	leader2 := cfg.checkOneLeader()
+	// fmt.Println("leader2 ", leader2)
 	other := (leader1 + 2) % servers
 	if leader2 == other {
 		other = (leader2 + 1) % servers
 	}
+	fmt.Println("other ", other)
 	cfg.disconnect(other)
 
 	// lots more commands that won't commit
-	for i := 0; i < 50; i++ {
+	for i := 0; i < 3; i++ {
 		cfg.rafts[leader2].Start(rand.Int())
 	}
 
@@ -465,8 +468,15 @@ func TestBackup2B(t *testing.T) {
 	cfg.connect((leader1 + 1) % servers)
 	cfg.connect(other)
 
+	// for _, rf := range cfg.rafts {
+	// 	fmt.Printf("node %v in term %v with logs %+v\n", rf.me, rf.currentTerm, LogInfoToString(&rf.logs))
+	// }
+
+	// NOTICE: final leader should not be leader1 or leader + 1, ought to be others
+	// finalLeader := cfg.checkOneLeader()
+	// fmt.Printf("final leader %v in term %v\n", finalLeader, cfg.rafts[finalLeader].currentTerm)
 	// lots of successful commands to new group.
-	for i := 0; i < 50; i++ {
+	for i := 0; i < 3; i++ {
 		cfg.one(rand.Int(), 3, true)
 	}
 
@@ -474,6 +484,7 @@ func TestBackup2B(t *testing.T) {
 	for i := 0; i < servers; i++ {
 		cfg.connect(i)
 	}
+
 	cfg.one(rand.Int(), servers, true)
 
 	cfg.end()

@@ -32,7 +32,7 @@ func (rf *Raft) replicateOneRound(peer int) {
 	DPrintf("[][][] rf.nextIndex %+v", rf.nextIndex)
 	prevLogIndex := rf.nextIndex[peer] - 1
 	req := rf.genAppendEntriesArgsL(prevLogIndex)
-	
+
 	DPrintf("[ReplicateOneRound] Node %v send AppendEntriesRpc to Node %v with req %+v", rf.me, peer, req)
 	rf.mu.Unlock()
 
@@ -137,6 +137,7 @@ func (rf *Raft) genAppendEntriesArgsL(prevLogIndex int) *AppendEntriesArgs {
 // isLogUpToDateL check if log catchs up
 func (rf *Raft) isLogUpToDateL(lastLogTerm int, lastLogIndex int) bool {
 	lastLog := rf.getLastLogL()
+	// false if rf.lastLogTerm > req.lastLogTerm, or term equals but has a smaller index
 	return lastLogTerm > lastLog.Term || (lastLogTerm == lastLog.Term && lastLogIndex >= lastLog.Index)
 }
 
