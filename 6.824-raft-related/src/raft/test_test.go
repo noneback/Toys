@@ -36,7 +36,7 @@ func TestInitialElection2A(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	term1 := cfg.checkTerms()
 	if term1 < 1 {
-		t.Fatalf("term is %+v, but should be at least 1", term1)
+		t.Fatalf("term is %v, but should be at least 1", term1)
 	}
 
 	// does the leader+term stay the same if there is no network failure?
@@ -122,24 +122,22 @@ func TestManyElections2A(t *testing.T) {
 }
 
 func TestBasicAgree2B(t *testing.T) {
-
 	servers := 3
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()
 
 	cfg.begin("Test (2B): basic agreement")
 
-	iters := 1
+	iters := 3
 	for index := 1; index < iters+1; index++ {
 		nd, _ := cfg.nCommitted(index)
-		// fmt.Println("[nCommitted]", nd, index)
 		if nd > 0 {
 			t.Fatalf("some have committed before Start()")
 		}
 
 		xindex := cfg.one(index*100, servers, false)
 		if xindex != index {
-			t.Fatalf("got index %+v but expected %+v", xindex, index)
+			t.Fatalf("got index %v but expected %v", xindex, index)
 		}
 	}
 
@@ -166,7 +164,7 @@ func TestRPCBytes2B(t *testing.T) {
 		cmd := randstring(5000)
 		xindex := cfg.one(cmd, servers, false)
 		if xindex != index {
-			t.Fatalf("got index %+v but expected %+v", xindex, index)
+			t.Fatalf("got index %v but expected %v", xindex, index)
 		}
 		sent += int64(len(cmd))
 	}
@@ -175,7 +173,7 @@ func TestRPCBytes2B(t *testing.T) {
 	got := bytes1 - bytes0
 	expected := int64(servers) * sent
 	if got > expected+50000 {
-		t.Fatalf("too many RPC bytes; got %+v, expected %+v", got, expected)
+		t.Fatalf("too many RPC bytes; got %v, expected %v", got, expected)
 	}
 
 	cfg.end()
@@ -193,7 +191,6 @@ func TestFailAgree2B(t *testing.T) {
 	// disconnect one follower from the network.
 	leader := cfg.checkOneLeader()
 	cfg.disconnect((leader + 1) % servers)
-	DPrintf("[TestFailAgree2B] Node %v disconnected", (leader+1)%servers)
 
 	// the leader and remaining follower should be
 	// able to agree despite the disconnected follower.
@@ -205,7 +202,6 @@ func TestFailAgree2B(t *testing.T) {
 
 	// re-connect
 	cfg.connect((leader + 1) % servers)
-	DPrintf("[TestFailAgree2B] Node %v re-connected", (leader+1)%servers)
 
 	// the full set of servers should preserve
 	// previous agreements, and be able to agree
@@ -237,14 +233,14 @@ func TestFailNoAgree2B(t *testing.T) {
 		t.Fatalf("leader rejected Start()")
 	}
 	if index != 2 {
-		t.Fatalf("expected index 2, got %+v", index)
+		t.Fatalf("expected index 2, got %v", index)
 	}
 
 	time.Sleep(2 * RaftElectionTimeout)
 
 	n, _ := cfg.nCommitted(index)
 	if n > 0 {
-		t.Fatalf("%+v committed but no majority", n)
+		t.Fatalf("%v committed but no majority", n)
 	}
 
 	// repair
@@ -260,7 +256,7 @@ func TestFailNoAgree2B(t *testing.T) {
 		t.Fatalf("leader2 rejected Start()")
 	}
 	if index2 < 2 || index2 > 3 {
-		t.Fatalf("unexpected index %+v", index2)
+		t.Fatalf("unexpected index %v", index2)
 	}
 
 	cfg.one(1000, servers, true)
@@ -332,7 +328,7 @@ loop:
 				}
 				cmds = append(cmds, ix)
 			} else {
-				t.Fatalf("value %+v is not an int", cmd)
+				t.Fatalf("value %v is not an int", cmd)
 			}
 		}
 
@@ -354,7 +350,7 @@ loop:
 				}
 			}
 			if ok == false {
-				t.Fatalf("cmd %+v missing in %+v", x, cmds)
+				t.Fatalf("cmd %v missing in %v", x, cmds)
 			}
 		}
 
@@ -418,13 +414,12 @@ func TestBackup2B(t *testing.T) {
 
 	// put leader and one follower in a partition
 	leader1 := cfg.checkOneLeader()
-	// fmt.Println("leader1 ", leader1)
 	cfg.disconnect((leader1 + 2) % servers)
 	cfg.disconnect((leader1 + 3) % servers)
 	cfg.disconnect((leader1 + 4) % servers)
 
 	// submit lots of commands that won't commit
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 50; i++ {
 		cfg.rafts[leader1].Start(rand.Int())
 	}
 
@@ -439,22 +434,20 @@ func TestBackup2B(t *testing.T) {
 	cfg.connect((leader1 + 4) % servers)
 
 	// lots of successful commands to new group.
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 50; i++ {
 		cfg.one(rand.Int(), 3, true)
 	}
 
 	// now another partitioned leader and one follower
 	leader2 := cfg.checkOneLeader()
-	// fmt.Println("leader2 ", leader2)
 	other := (leader1 + 2) % servers
 	if leader2 == other {
 		other = (leader2 + 1) % servers
 	}
-	fmt.Println("other ", other)
 	cfg.disconnect(other)
 
 	// lots more commands that won't commit
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 50; i++ {
 		cfg.rafts[leader2].Start(rand.Int())
 	}
 
@@ -468,15 +461,8 @@ func TestBackup2B(t *testing.T) {
 	cfg.connect((leader1 + 1) % servers)
 	cfg.connect(other)
 
-	// for _, rf := range cfg.rafts {
-	// 	fmt.Printf("node %v in term %v with logs %+v\n", rf.me, rf.currentTerm, LogInfoToString(&rf.logs))
-	// }
-
-	// NOTICE: final leader should not be leader1 or leader + 1, ought to be others
-	// finalLeader := cfg.checkOneLeader()
-	// fmt.Printf("final leader %v in term %v\n", finalLeader, cfg.rafts[finalLeader].currentTerm)
 	// lots of successful commands to new group.
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 50; i++ {
 		cfg.one(rand.Int(), 3, true)
 	}
 
@@ -484,7 +470,6 @@ func TestBackup2B(t *testing.T) {
 	for i := 0; i < servers; i++ {
 		cfg.connect(i)
 	}
-
 	cfg.one(rand.Int(), servers, true)
 
 	cfg.end()
@@ -509,7 +494,7 @@ func TestCount2B(t *testing.T) {
 	total1 := rpcs()
 
 	if total1 > 30 || total1 < 1 {
-		t.Fatalf("too many or few RPCs (%+v) to elect initial leader\n", total1)
+		t.Fatalf("too many or few RPCs (%v) to elect initial leader\n", total1)
 	}
 
 	var total2 int
@@ -555,7 +540,7 @@ loop:
 					// term changed -- try again
 					continue loop
 				}
-				t.Fatalf("wrong value %+v committed for index %+v; expected %+v\n", cmd, starti+i, cmds)
+				t.Fatalf("wrong value %v committed for index %v; expected %v\n", cmd, starti+i, cmds)
 			}
 		}
 
@@ -575,7 +560,7 @@ loop:
 		}
 
 		if total2-total1 > (iters+1+3)*3 {
-			t.Fatalf("too many RPCs (%+v) for %+v entries\n", total2-total1, iters)
+			t.Fatalf("too many RPCs (%v) for %v entries\n", total2-total1, iters)
 		}
 
 		success = true
@@ -594,7 +579,7 @@ loop:
 	}
 
 	if total3-total2 > 3*20 {
-		t.Fatalf("too many RPCs (%+v) for 1 second of idleness\n", total3-total2)
+		t.Fatalf("too many RPCs (%v) for 1 second of idleness\n", total3-total2)
 	}
 
 	cfg.end()

@@ -74,11 +74,9 @@ func (rf *Raft) RequestVote(req *RequestVoteArgs, resp *RequestVoteReply) {
 		rf.ChangeStateL(StateFollower)
 		rf.votedFor, rf.currentTerm = -1, req.Term
 	}
-	DPrintf("[out of date] node %v in term %v receive req %+v", rf.me, rf.currentTerm, req)
 	// check if candidate log catches up
 	if !rf.isLogUpToDateL(req.LastLogTerm, req.LastLogIndex) {
 		resp.Term, resp.VoteGranted = rf.currentTerm, false
-		DPrintf("[out of date] req.log is out of date, node %v, req %+v\n", rf.me, req)
 		return
 	}
 	// vote for candidate and reset election timer
