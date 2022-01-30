@@ -5,6 +5,7 @@ func (rf *Raft) startElectionL() {
 	req := rf.genRequestVoteArgsL()
 	grantedVotes := 1
 	rf.votedFor = rf.me
+	rf.persist()
 
 	for peer := range rf.peers {
 		if peer == rf.me {
@@ -17,6 +18,7 @@ func (rf *Raft) startElectionL() {
 				// handle response
 				rf.mu.Lock()
 				defer rf.mu.Unlock()
+
 				DPrintf("[startElectionL] Node %v receives resp %+v from Node %v after send req %+v in term %v", rf.me, resp, p, req, rf.currentTerm)
 				if rf.currentTerm == req.Term && rf.state == StateCandidate {
 					// only when candidate term equal to req.term, the resp need to handle, otherwise ignore it.
@@ -31,6 +33,7 @@ func (rf *Raft) startElectionL() {
 						DPrintf("[startElectionL] Node %v find a new leader %v with term %v and steps down in term %v", rf.me, p, resp.Term, rf.currentTerm)
 						rf.ChangeStateL(StateFollower)
 						rf.currentTerm, rf.votedFor = resp.Term, -1
+						rf.persist()
 					}
 				}
 			}
@@ -63,6 +66,7 @@ type RequestVoteReply struct {
 func (rf *Raft) RequestVote(req *RequestVoteArgs, resp *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
 	// first of all, refuse all out-dated req, or has voted to other candidate
 	if req.Term < rf.currentTerm || (req.Term == rf.currentTerm && rf.votedFor != -1 && rf.votedFor != req.CandidateID) {
 		resp.Term = rf.currentTerm

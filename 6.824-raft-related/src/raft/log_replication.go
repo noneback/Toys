@@ -29,7 +29,7 @@ func (rf *Raft) replicateOneRound(peer int) {
 		rf.mu.Unlock()
 		return
 	}
-	DPrintf("[][][] rf.nextIndex %+v", rf.nextIndex)
+
 	prevLogIndex := rf.nextIndex[peer] - 1
 	req := rf.genAppendEntriesArgsL(prevLogIndex)
 
@@ -69,7 +69,6 @@ func (rf *Raft) handleAppendEntriesRespL(peer int, req *AppendEntriesArgs, resp 
 			if matchCnt*2 > len(rf.peers) {
 				rf.applyCond.Signal()
 				newCommitIndex++
-
 			} else {
 				break
 			}
@@ -91,6 +90,7 @@ func (rf *Raft) handleAppendEntriesRespL(peer int, req *AppendEntriesArgs, resp 
 			// out-dated term msg, turn to follower
 			rf.ChangeStateL(StateFollower)
 			rf.currentTerm, rf.votedFor = resp.Term, -1
+			rf.persist()
 		} else if resp.Term == rf.currentTerm {
 			// failed because of log inconsistences
 			// NOTICE:
@@ -161,6 +161,8 @@ type AppendEntriesReply struct {
 func (rf *Raft) AppendEntries(req *AppendEntriesArgs, resp *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
+
 	DPrintf("[Before AppendEntries] Node %v processing, req %+v", rf.me, req)
 	// defer DPrintf("[after RPC log append]Node %v Raft %+v,logs addr %p %+v in req %+v", rf.me, rf, &rf.logs, rf.logs, req)
 	defer func(rf *Raft, req *AppendEntriesArgs, resp *AppendEntriesReply) {
@@ -261,6 +263,7 @@ func (rf *Raft) needReplicating(peer int) bool {
 	return rf.state == StateLeader && rf.matchIndex[peer] < rf.getLastLogL().Index
 }
 
+// appendEntryL append entry to the tail of logs
 func (rf *Raft) appendEntryL(cmd interface{}) *LogEntry {
 	lastLog := rf.getLastLogL()
 	newLog := LogEntry{
@@ -269,8 +272,10 @@ func (rf *Raft) appendEntryL(cmd interface{}) *LogEntry {
 		Cmd:   cmd,
 	}
 	rf.logs = append(rf.logs, newLog)
+
 	DPrintf("[appendEntryL] Node %+v receives a new command {%+v} to replicate in term %+v", rf.me, newLog, rf.currentTerm)
 	// update matchIndex and nextIndex
 	rf.matchIndex[rf.me], rf.nextIndex[rf.me] = newLog.Index, newLog.Index+1
+	rf.persist()
 	return &newLog
 }

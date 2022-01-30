@@ -8,7 +8,7 @@ import (
 
 // Debugging
 const (
-	Debug      = true
+	Debug      = false
 	MaxLogSize = 100
 )
 
