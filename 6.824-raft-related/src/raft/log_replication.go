@@ -1,5 +1,9 @@
 package raft
 
+import (
+	"sort"
+)
+
 type LogEntry struct {
 	Cmd   interface{}
 	Term  int
@@ -58,30 +62,44 @@ func (rf *Raft) handleAppendEntriesRespL(peer int, req *AppendEntriesArgs, resp 
 
 		// update leaderCommit
 		newCommitIndex := rf.commitIndex
-		for {
-			matchCnt := 0
-			for p := range rf.peers {
-				if rf.matchIndex[p] > newCommitIndex {
-					matchCnt++
-				}
-			}
+		n := len(rf.matchIndex)
+		tmpMatchIndexes := make([]int, n)
+		copy(tmpMatchIndexes, rf.matchIndex)
+		sort.Ints(tmpMatchIndexes)
+		tmpMatchIndexes = ReverseSortedIndexes(tmpMatchIndexes)
+		// fmt.Println(tmpMatchIndexes)
+		newCommitIndex = Max(newCommitIndex, tmpMatchIndexes[n/2])
 
-			if matchCnt*2 > len(rf.peers) {
-				rf.applyCond.Signal()
-				newCommitIndex++
-			} else {
-				break
-			}
-		}
+		// extractedIndexes := ExtractIndexesFromLogs(rf.logs)
+		// sort.Ints(extractedIndexes)
+		// sortedIndexes := ReverseSortedIndexes(extractedIndexes)
+		// fmt.Println("[][]", sortedIndexes, extractedIndexes)
+
+		// for {
+		// 	matchCnt := 0
+		// 	for p := range rf.peers {
+		// 		if rf.matchIndex[p] > newCommitIndex {
+		// 			matchCnt++
+		// 		}
+		// 	}
+
+		// 	if matchCnt*2 > len(rf.peers) {
+		// 		rf.applyCond.Signal()
+		// 		newCommitIndex++
+		// 	} else {
+		// 		break
+		// 	}
+		// }
 		// update commitIndex
 		if newCommitIndex > rf.commitIndex {
 			// whether the log's term is matched in log[index]
 			if rf.matchLogL(rf.currentTerm, newCommitIndex) {
-				DPrintf("[handleAppendEntriesRespL] Node %d advance commitIndex from %d to %d with matchIndex %+v in term %d", rf.me, rf.commitIndex, newCommitIndex, rf.matchIndex, rf.currentTerm)
-				DPrintf("[HandleAppendEntriesResp] log matched {term:%v, index:%v}, update Node %v  commitIndex to %v in term %v", rf.currentTerm, newCommitIndex, rf.me, newCommitIndex, rf.currentTerm)
+				// DPrintf("[handleAppendEntriesRespL] Node %d advance commitIndex from %d to %d with matchIndex %+v in term %d", rf.me, rf.commitIndex, newCommitIndex, rf.matchIndex, rf.currentTerm)
+				// DPrintf("[HandleAppendEntriesResp] log matched {term:%v, index:%v}, update Node %v  commitIndex to %v in term %v", rf.currentTerm, newCommitIndex, rf.me, newCommitIndex, rf.currentTerm)
 				rf.commitIndex = newCommitIndex
+				rf.applyCond.Signal()
 			} else {
-				DPrintf("[HandleAppendEntriesResp] with req %+v log not matched {term:%v, index:%v}, cannot update Node %v commitIndex to %v in term %v", req, rf.currentTerm, newCommitIndex, rf.me, newCommitIndex, rf.currentTerm)
+				// DPrintf("[HandleAppendEntriesResp] with req %+v log not matched {term:%v, index:%v}, cannot update Node %v commitIndex to %v in term %v", req, rf.currentTerm, newCommitIndex, rf.me, newCommitIndex, rf.currentTerm)
 				DPrintf("[handleAppendEntriesRespL] Node %d can not advance commitIndex from %d because the term of newCommitIndex %d is not equal to currentTerm %d", rf.me, rf.commitIndex, newCommitIndex, rf.currentTerm)
 			}
 		}

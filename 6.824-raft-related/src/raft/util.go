@@ -8,7 +8,7 @@ import (
 
 // Debugging
 const (
-	Debug      = false
+	Debug      = true
 	MaxLogSize = 100
 )
 
@@ -57,4 +57,22 @@ func shrinkEntriesArray(entries []LogEntry) []LogEntry {
 
 func LogInfoToString(entries *[]LogEntry) string {
 	return fmt.Sprintf("addr %p, len %v, cap %v, content %+v", &entries, len(*entries), cap(*entries), entries)
+}
+
+type LogEntries []LogEntry
+
+func (logs LogEntries) Less(i, j int) bool {
+	return logs[i].Index < logs[j].Index
+}
+func (logs LogEntries) Len() int { return len(logs) }
+
+func (logs LogEntries) Swap(i, j int) {
+	logs[i], logs[j] = logs[j], logs[i]
+}
+
+func ReverseSortedIndexes(indexes []int) []int {
+	for i, j := 0, len(indexes)-1; i < j; i, j = i+1, j-1 {
+		indexes[i], indexes[j] = indexes[j], indexes[i]
+	}
+	return indexes
 }
