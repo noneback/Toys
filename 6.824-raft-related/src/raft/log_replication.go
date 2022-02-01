@@ -1,5 +1,9 @@
 package raft
 
+import (
+	"sort"
+)
+
 type LogEntry struct {
 	Cmd   interface{}
 	Term  int
@@ -29,7 +33,7 @@ func (rf *Raft) replicateOneRound(peer int) {
 		rf.mu.Unlock()
 		return
 	}
-	DPrintf("[][][] rf.nextIndex %+v", rf.nextIndex)
+
 	prevLogIndex := rf.nextIndex[peer] - 1
 	req := rf.genAppendEntriesArgsL(prevLogIndex)
 
@@ -58,31 +62,44 @@ func (rf *Raft) handleAppendEntriesRespL(peer int, req *AppendEntriesArgs, resp 
 
 		// update leaderCommit
 		newCommitIndex := rf.commitIndex
-		for {
-			matchCnt := 0
-			for p := range rf.peers {
-				if rf.matchIndex[p] > newCommitIndex {
-					matchCnt++
-				}
-			}
+		n := len(rf.matchIndex)
+		tmpMatchIndexes := make([]int, n)
+		copy(tmpMatchIndexes, rf.matchIndex)
+		sort.Ints(tmpMatchIndexes)
+		tmpMatchIndexes = ReverseSortedIndexes(tmpMatchIndexes)
+		// fmt.Println(tmpMatchIndexes)
+		newCommitIndex = Max(newCommitIndex, tmpMatchIndexes[n/2])
 
-			if matchCnt*2 > len(rf.peers) {
-				rf.applyCond.Signal()
-				newCommitIndex++
+		// extractedIndexes := ExtractIndexesFromLogs(rf.logs)
+		// sort.Ints(extractedIndexes)
+		// sortedIndexes := ReverseSortedIndexes(extractedIndexes)
+		// fmt.Println("[][]", sortedIndexes, extractedIndexes)
 
-			} else {
-				break
-			}
-		}
+		// for {
+		// 	matchCnt := 0
+		// 	for p := range rf.peers {
+		// 		if rf.matchIndex[p] > newCommitIndex {
+		// 			matchCnt++
+		// 		}
+		// 	}
+
+		// 	if matchCnt*2 > len(rf.peers) {
+		// 		rf.applyCond.Signal()
+		// 		newCommitIndex++
+		// 	} else {
+		// 		break
+		// 	}
+		// }
 		// update commitIndex
 		if newCommitIndex > rf.commitIndex {
 			// whether the log's term is matched in log[index]
 			if rf.matchLogL(rf.currentTerm, newCommitIndex) {
-				DPrintf("[handleAppendEntriesRespL] Node %d advance commitIndex from %d to %d with matchIndex %+v in term %d", rf.me, rf.commitIndex, newCommitIndex, rf.matchIndex, rf.currentTerm)
-				DPrintf("[HandleAppendEntriesResp] log matched {term:%v, index:%v}, update Node %v  commitIndex to %v in term %v", rf.currentTerm, newCommitIndex, rf.me, newCommitIndex, rf.currentTerm)
+				// DPrintf("[handleAppendEntriesRespL] Node %d advance commitIndex from %d to %d with matchIndex %+v in term %d", rf.me, rf.commitIndex, newCommitIndex, rf.matchIndex, rf.currentTerm)
+				// DPrintf("[HandleAppendEntriesResp] log matched {term:%v, index:%v}, update Node %v  commitIndex to %v in term %v", rf.currentTerm, newCommitIndex, rf.me, newCommitIndex, rf.currentTerm)
 				rf.commitIndex = newCommitIndex
+				rf.applyCond.Signal()
 			} else {
-				DPrintf("[HandleAppendEntriesResp] with req %+v log not matched {term:%v, index:%v}, cannot update Node %v commitIndex to %v in term %v", req, rf.currentTerm, newCommitIndex, rf.me, newCommitIndex, rf.currentTerm)
+				// DPrintf("[HandleAppendEntriesResp] with req %+v log not matched {term:%v, index:%v}, cannot update Node %v commitIndex to %v in term %v", req, rf.currentTerm, newCommitIndex, rf.me, newCommitIndex, rf.currentTerm)
 				DPrintf("[handleAppendEntriesRespL] Node %d can not advance commitIndex from %d because the term of newCommitIndex %d is not equal to currentTerm %d", rf.me, rf.commitIndex, newCommitIndex, rf.currentTerm)
 			}
 		}
@@ -91,6 +108,7 @@ func (rf *Raft) handleAppendEntriesRespL(peer int, req *AppendEntriesArgs, resp 
 			// out-dated term msg, turn to follower
 			rf.ChangeStateL(StateFollower)
 			rf.currentTerm, rf.votedFor = resp.Term, -1
+			rf.persist()
 		} else if resp.Term == rf.currentTerm {
 			// failed because of log inconsistences
 			// NOTICE:
@@ -161,6 +179,8 @@ type AppendEntriesReply struct {
 func (rf *Raft) AppendEntries(req *AppendEntriesArgs, resp *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	defer rf.persist()
+
 	DPrintf("[Before AppendEntries] Node %v processing, req %+v", rf.me, req)
 	// defer DPrintf("[after RPC log append]Node %v Raft %+v,logs addr %p %+v in req %+v", rf.me, rf, &rf.logs, rf.logs, req)
 	defer func(rf *Raft, req *AppendEntriesArgs, resp *AppendEntriesReply) {
@@ -261,6 +281,7 @@ func (rf *Raft) needReplicating(peer int) bool {
 	return rf.state == StateLeader && rf.matchIndex[peer] < rf.getLastLogL().Index
 }
 
+// appendEntryL append entry to the tail of logs
 func (rf *Raft) appendEntryL(cmd interface{}) *LogEntry {
 	lastLog := rf.getLastLogL()
 	newLog := LogEntry{
@@ -269,8 +290,10 @@ func (rf *Raft) appendEntryL(cmd interface{}) *LogEntry {
 		Cmd:   cmd,
 	}
 	rf.logs = append(rf.logs, newLog)
+
 	DPrintf("[appendEntryL] Node %+v receives a new command {%+v} to replicate in term %+v", rf.me, newLog, rf.currentTerm)
 	// update matchIndex and nextIndex
 	rf.matchIndex[rf.me], rf.nextIndex[rf.me] = newLog.Index, newLog.Index+1
+	rf.persist()
 	return &newLog
 }
