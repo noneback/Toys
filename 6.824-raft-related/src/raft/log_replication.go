@@ -33,24 +33,32 @@ func (rf *Raft) replicateOneRound(peer int) {
 		rf.mu.Unlock()
 		return
 	}
-
 	prevLogIndex := rf.nextIndex[peer] - 1
-	req := rf.genAppendEntriesArgsL(prevLogIndex)
-
-	DPrintf("[ReplicateOneRound] Node %v send AppendEntriesRpc to Node %v with req %+v", rf.me, peer, req)
-	rf.mu.Unlock()
-
-	resp := &AppendEntriesReply{}
-	if rf.sendAppendEntries(peer, req, resp) {
-		rf.mu.Lock()
-		rf.handleAppendEntriesRespL(peer, req, resp)
+	if rf.getFirstLogL().Index > prevLogIndex { //NOTICE: why not equal
+		// send Install snapshot Rpc
+		req := rf.genInstallSnapshotArgsL()
 		rf.mu.Unlock()
+		resp := &InstallSnapshotResponse{}
+		DPrintf("[InstallSnapshot] Node %v send InstallSnapshotRpc to Node %v with req %+v", rf.me, peer, req)
+		if rf.sendInstallSnapshot(peer, req, resp) {
+			rf.mu.Lock()
+			rf.handleInstallSnapshotResponseL(peer, req, resp)
+			rf.mu.Unlock()
+		}
+	} else {
+		req := rf.genAppendEntriesArgsL(prevLogIndex)
+		rf.mu.Unlock()
+		DPrintf("[ReplicateOneRound] Node %v send AppendEntriesRpc to Node %v with req %+v", rf.me, peer, req)
+		resp := &AppendEntriesReply{}
+		if rf.sendAppendEntries(peer, req, resp) {
+			rf.mu.Lock()
+			rf.handleAppendEntriesRespL(peer, req, resp)
+			rf.mu.Unlock()
+		}
 	}
 }
 
 func (rf *Raft) handleAppendEntriesRespL(peer int, req *AppendEntriesArgs, resp *AppendEntriesReply) {
-	defer DPrintf("[after handleAppendEntriesRespL from %v] Node %+v's state is {state %+v,term %+v,commitIndex %+v,lastApplied %+v,firstLog %+v,lastLog %+v} after handling AppendEntriesResponse %+v for AppendEntriesRequest %+v", peer, rf.me, rf.state, rf.currentTerm, rf.commitIndex, rf.lastApplied, rf.getFirstLogL(), rf.getLastLogL(), resp, req)
-
 	// if not leader or req is out-dated, return
 	if rf.state != StateLeader || req.Term < rf.currentTerm {
 		return
@@ -67,35 +75,16 @@ func (rf *Raft) handleAppendEntriesRespL(peer int, req *AppendEntriesArgs, resp 
 		copy(tmpMatchIndexes, rf.matchIndex)
 		sort.Ints(tmpMatchIndexes)
 		tmpMatchIndexes = ReverseSortedIndexes(tmpMatchIndexes)
-		// fmt.Println(tmpMatchIndexes)
+
 		newCommitIndex = Max(newCommitIndex, tmpMatchIndexes[n/2])
 
-		// extractedIndexes := ExtractIndexesFromLogs(rf.logs)
-		// sort.Ints(extractedIndexes)
-		// sortedIndexes := ReverseSortedIndexes(extractedIndexes)
-		// fmt.Println("[][]", sortedIndexes, extractedIndexes)
-
-		// for {
-		// 	matchCnt := 0
-		// 	for p := range rf.peers {
-		// 		if rf.matchIndex[p] > newCommitIndex {
-		// 			matchCnt++
-		// 		}
-		// 	}
-
-		// 	if matchCnt*2 > len(rf.peers) {
-		// 		rf.applyCond.Signal()
-		// 		newCommitIndex++
-		// 	} else {
-		// 		break
-		// 	}
-		// }
 		// update commitIndex
 		if newCommitIndex > rf.commitIndex {
 			// whether the log's term is matched in log[index]
 			if rf.matchLogL(rf.currentTerm, newCommitIndex) {
 				// DPrintf("[handleAppendEntriesRespL] Node %d advance commitIndex from %d to %d with matchIndex %+v in term %d", rf.me, rf.commitIndex, newCommitIndex, rf.matchIndex, rf.currentTerm)
 				// DPrintf("[HandleAppendEntriesResp] log matched {term:%v, index:%v}, update Node %v  commitIndex to %v in term %v", rf.currentTerm, newCommitIndex, rf.me, newCommitIndex, rf.currentTerm)
+				DPrintf("[committedIndex] Leader %v commit index %v", rf.me, rf.commitIndex)
 				rf.commitIndex = newCommitIndex
 				rf.applyCond.Signal()
 			} else {
@@ -125,7 +114,7 @@ func (rf *Raft) handleAppendEntriesRespL(peer int, req *AppendEntriesArgs, resp 
 			}
 		}
 	}
-
+	DPrintf("[after handleAppendEntriesRespL from %v] Node %+v's state is {state %+v,term %+v,commitIndex %+v,lastApplied %+v,firstLog %+v,lastLog %+v} after handling AppendEntriesResponse %+v for AppendEntriesRequest %+v", peer, rf.me, rf.state, rf.currentTerm, rf.commitIndex, rf.lastApplied, rf.getFirstLogL(), rf.getLastLogL(), resp, req)
 }
 
 // matchLogL tell log if matched
@@ -181,7 +170,7 @@ func (rf *Raft) AppendEntries(req *AppendEntriesArgs, resp *AppendEntriesReply) 
 	defer rf.mu.Unlock()
 	defer rf.persist()
 
-	DPrintf("[Before AppendEntries] Node %v processing, req %+v", rf.me, req)
+	// DPrintf("[Before AppendEntries] Node %v processing, req %+v", rf.me, req)
 	// defer DPrintf("[after RPC log append]Node %v Raft %+v,logs addr %p %+v in req %+v", rf.me, rf, &rf.logs, rf.logs, req)
 	defer func(rf *Raft, req *AppendEntriesArgs, resp *AppendEntriesReply) {
 		DPrintf("[after AppendEntries] Node %v state is {state %v,term %+v,commitIndex %+v,lastApplied %+v,firstLog %+v,lastLog %+v, logs info %v} After processing AppendEntriesRequest %+v and reply AppendEntriesResponse %+v", rf.me, rf.state, rf.currentTerm, rf.commitIndex, rf.lastApplied, rf.getFirstLogL(), rf.getLastLogL(), LogInfoToString(&rf.logs), req, resp)
@@ -235,12 +224,10 @@ func (rf *Raft) AppendEntries(req *AppendEntriesArgs, resp *AppendEntriesReply) 
 	for index, entry := range req.Entries {
 		// if req.entry is a new one, and
 		if entry.Index-firstIndex >= len(rf.logs) || rf.logs[entry.Index-firstIndex].Term != entry.Term {
-			DPrintf("[in AppendEntries] Node %v trying to append entry, with raw entries %v and rf.firstIndex %v", rf.me, req.Entries, firstIndex)
-			rf.logs = append(rf.logs[:entry.Index-firstIndex], req.Entries[index:]...) // NOTICE: why append fails after this func finished
-			DPrintf("[in AppendEntries] After Log AppendEntries rf.logs[:%v] %v, req.Entries[%v:] %v, rf.logs %v, lastLog %v", entry.Index-firstIndex, rf.logs[:entry.Index-firstIndex], index, req.Entries[index:], rf.logs, rf.getLastLogL())
+			rf.logs = append(rf.logs[:entry.Index-firstIndex], req.Entries[index:]...)
 		}
 	}
-	// DPrintf("[out the loop of AppendEntries Rpc] Node %v , logs %v", rf.me, rf.logs)
+
 	// handle with commitIndex
 	newCommitIndex := Min(req.LeaderCommit, rf.getLastLogL().Index)
 	if newCommitIndex > rf.commitIndex {
@@ -265,12 +252,12 @@ func (rf *Raft) getLastLogL() *LogEntry {
 func (rf *Raft) replicator(peer int) {
 	rf.replicatorCond[peer].L.Lock()
 	defer rf.replicatorCond[peer].L.Unlock()
-	DPrintf("[replicator] Node %v replicator triggered by Leader %v", peer, rf.me)
 
 	for !rf.killed() {
 		for !rf.needReplicating(peer) {
 			rf.replicatorCond[peer].Wait()
 		}
+		DPrintf("[replicator] Node %v replicator triggered by Leader %v", peer, rf.me)
 		rf.replicateOneRound(peer)
 	}
 }
@@ -296,4 +283,31 @@ func (rf *Raft) appendEntryL(cmd interface{}) *LogEntry {
 	rf.matchIndex[rf.me], rf.nextIndex[rf.me] = newLog.Index, newLog.Index+1
 	rf.persist()
 	return &newLog
+}
+
+func (rf *Raft) applier() {
+	for !rf.killed() {
+		rf.mu.Lock()
+		for rf.lastApplied >= rf.commitIndex {
+			rf.applyCond.Wait()
+		}
+		// apply
+		firstIndex, commitIndex, lastApplied := rf.getFirstLogL().Index, rf.commitIndex, rf.lastApplied
+		entries := make([]LogEntry, commitIndex-lastApplied)
+		copy(entries, rf.logs[lastApplied+1-firstIndex:commitIndex+1-firstIndex])
+		rf.mu.Unlock()
+
+		for _, e := range entries {
+			rf.applyCh <- ApplyMsg{
+				CommandValid: true,
+				Command:      e.Cmd,
+				CommandIndex: e.Index,
+			}
+		}
+
+		rf.mu.Lock()
+		DPrintf("[applier] Node %v applies entries %v-%v in term %v", rf.me, rf.lastApplied, commitIndex, rf.currentTerm)
+		rf.lastApplied = Max(rf.lastApplied, commitIndex)
+		rf.mu.Unlock()
+	}
 }
