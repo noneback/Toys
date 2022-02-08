@@ -102,12 +102,7 @@ func (rf *Raft) GetState() (int, bool) {
 // see paper's Figure 2 for a description of what should be persistent.
 //
 func (rf *Raft) persist() {
-	w := new(bytes.Buffer)
-	e := labgob.NewEncoder(w)
-	e.Encode(rf.currentTerm)
-	e.Encode(rf.votedFor)
-	e.Encode(rf.logs)
-	rf.persister.SaveRaftState(w.Bytes())
+	rf.persister.SaveRaftState(rf.encodeStateL())
 }
 
 //
@@ -127,28 +122,8 @@ func (rf *Raft) readPersist(data []byte) {
 		DPrintf("[Read Persist] Node %v decode failed", rf.me)
 		return
 	}
-
 	rf.currentTerm, rf.votedFor, rf.logs = currentTerm, votedFor, logs
-}
-
-//
-// A service wants to switch to snapshot.  Only do so if Raft hasn't
-// have more recent info since it communicate the snapshot on applyCh.
-//
-func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int, snapshot []byte) bool {
-
-	// Your code here (2D).
-
-	return true
-}
-
-// the service says it has created a snapshot that has
-// all info up to and including index. this means the
-// service no longer needs the log through (and including)
-// that index. Raft should now trim its log as much as possible.
-func (rf *Raft) Snapshot(index int, snapshot []byte) {
-	// Your code here (2D).
-
+	rf.lastApplied, rf.commitIndex = rf.logs[0].Index, rf.logs[0].Index // in snapshot
 }
 
 //
@@ -170,10 +145,10 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	defer rf.mu.Unlock()
 	// if is leader
 	if rf.state != StateLeader {
-		// DPrintf("[Start] Not Leader %v", rf.me)
+		DPrintf("[Start] Not Leader %v\n", rf.me)
 		return -1, -1, false
 	}
-	DPrintf("[Start] Node %v", rf.me)
+	DPrintf("[Start] Node %v\n", rf.me)
 	// append to log
 	newLog := rf.appendEntryL(command)
 	// make an agreement
@@ -226,28 +201,6 @@ func (rf *Raft) ticker() {
 			rf.mu.Unlock()
 		}
 	}
-}
-
-func (rf *Raft) applier() {
-	for !rf.killed() {
-		rf.mu.Lock()
-		for rf.lastApplied >= rf.commitIndex {
-			rf.applyCond.Wait()
-		}
-		// apply
-		firstIndex, commitIndex, lastApplied := rf.getFirstLogL().Index, rf.commitIndex, rf.lastApplied
-		for _, e := range rf.logs[lastApplied+1-firstIndex : commitIndex+1-firstIndex] {
-			rf.applyCh <- ApplyMsg{
-				CommandValid: true,
-				Command:      e.Cmd,
-				CommandIndex: e.Index,
-			}
-		}
-		DPrintf("[applier] Node %v applies entries %v-%v in term %v", rf.me, rf.lastApplied, commitIndex, rf.currentTerm)
-		rf.lastApplied = Max(rf.lastApplied, commitIndex)
-		rf.mu.Unlock()
-	}
-
 }
 
 func Make(peers []*labrpc.ClientEnd, me int,
@@ -312,4 +265,14 @@ func (rf *Raft) ChangeStateL(state NodeState) {
 		rf.electionTimer.Stop()
 		rf.resetHeartbeatTimerL()
 	}
+}
+
+// some utils about raft node
+func (rf *Raft) encodeStateL() []byte {
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.votedFor)
+	e.Encode(rf.logs)
+	return w.Bytes()
 }

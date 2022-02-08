@@ -142,9 +142,9 @@ func (cfg *config) checkLogs(i int, m ApplyMsg) (string, bool) {
 	v := m.Command
 	for j := 0; j < len(cfg.logs); j++ {
 		if old, oldok := cfg.logs[j][m.CommandIndex]; oldok && old != v {
-			log.Printf("%+v: log %+v; server %+v\n", i, cfg.logs[i], cfg.logs[j])
+			log.Printf("%v: log %v; server %v\n", i, cfg.logs[i], cfg.logs[j])
 			// some server has already committed a different value for this entry!
-			err_msg = fmt.Sprintf("commit index=%+v server=%+v %+v != server=%+v %+v",
+			err_msg = fmt.Sprintf("commit index=%v server=%v %v != server=%v %v",
 				m.CommandIndex, i, m.Command, j, old)
 		}
 	}
@@ -163,15 +163,14 @@ func (cfg *config) applier(i int, applyCh chan ApplyMsg) {
 		if m.CommandValid == false {
 			// ignore other types of ApplyMsg
 		} else {
-			// fmt.Printf("[trigger apply] %+v\n", m)
 			cfg.mu.Lock()
 			err_msg, prevok := cfg.checkLogs(i, m)
 			cfg.mu.Unlock()
 			if m.CommandIndex > 1 && prevok == false {
-				err_msg = fmt.Sprintf("server %+v apply out of order %+v", i, m.CommandIndex)
+				err_msg = fmt.Sprintf("server %v apply out of order %v", i, m.CommandIndex)
 			}
 			if err_msg != "" {
-				log.Fatalf("apply error: %+v\n", err_msg)
+				log.Fatalf("apply error: %v\n", err_msg)
 				cfg.applyErr[i] = err_msg
 				// keep reading after error so that Raft doesn't block
 				// holding locks...
@@ -187,7 +186,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 	lastApplied := 0
 	for m := range applyCh {
 		if m.SnapshotValid {
-			//DPrintf("Installsnapshot %+v %+v\n", m.SnapshotIndex, lastApplied)
+			// fmt.Printf("Installsnapshot %v %v\n", m.SnapshotIndex, lastApplied)
 			cfg.mu.Lock()
 			if cfg.rafts[i].CondInstallSnapshot(m.SnapshotTerm,
 				m.SnapshotIndex, m.Snapshot) {
@@ -203,15 +202,15 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 			}
 			cfg.mu.Unlock()
 		} else if m.CommandValid && m.CommandIndex > lastApplied {
-			//DPrintf("apply %+v lastApplied %+v\n", m.CommandIndex, lastApplied)
+			//DPrintf("apply %v lastApplied %v\n", m.CommandIndex, lastApplied)
 			cfg.mu.Lock()
 			err_msg, prevok := cfg.checkLogs(i, m)
 			cfg.mu.Unlock()
 			if m.CommandIndex > 1 && prevok == false {
-				err_msg = fmt.Sprintf("server %+v apply out of order %+v", i, m.CommandIndex)
+				err_msg = fmt.Sprintf("server %v apply out of order %v", i, m.CommandIndex)
 			}
 			if err_msg != "" {
-				log.Fatalf("apply error: %+v\n", err_msg)
+				log.Fatalf("apply error: %v\n", err_msg)
 				cfg.applyErr[i] = err_msg
 				// keep reading after error so that Raft doesn't block
 				// holding locks...
@@ -229,7 +228,7 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 			// commands. Old command may never happen,
 			// depending on the Raft implementation, but
 			// just in case.
-			// DPrintf("Ignore: Index %+v lastApplied %+v\n", m.CommandIndex, lastApplied)
+			// DPrintf("Ignore: Index %v lastApplied %v\n", m.CommandIndex, lastApplied)
 
 		}
 	}
@@ -308,6 +307,7 @@ func (cfg *config) cleanup() {
 
 // attach server i to the net.
 func (cfg *config) connect(i int) {
+	// fmt.Printf("connect(%d)\n", i)
 	DPrintf("connect(%d)\n", i)
 
 	cfg.connected[i] = true
@@ -331,6 +331,7 @@ func (cfg *config) connect(i int) {
 
 // detach server i from the net.
 func (cfg *config) disconnect(i int) {
+	// fmt.Printf("disconnect(%d)\n", i)
 	DPrintf("disconnect(%d)\n", i)
 
 	cfg.connected[i] = false
@@ -428,7 +429,7 @@ func (cfg *config) checkNoLeader() {
 		if cfg.connected[i] {
 			_, is_leader := cfg.rafts[i].GetState()
 			if is_leader {
-				cfg.t.Fatalf("expected no leader, but %+v claims to be leader", i)
+				cfg.t.Fatalf("expected no leader, but %v claims to be leader", i)
 			}
 		}
 	}
@@ -445,12 +446,11 @@ func (cfg *config) nCommitted(index int) (int, interface{}) {
 
 		cfg.mu.Lock()
 		cmd1, ok := cfg.logs[i][index]
-		// fmt.Println("[in uCommitted]", cfg.logs)
 		cfg.mu.Unlock()
 
 		if ok {
 			if count > 0 && cmd != cmd1 {
-				cfg.t.Fatalf("committed values do not match: index %+v, %+v, %+v\n",
+				cfg.t.Fatalf("committed values do not match: index %v, %v, %v\n",
 					index, cmd, cmd1)
 			}
 			count += 1
@@ -518,10 +518,8 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 			}
 			cfg.mu.Unlock()
 			if rf != nil {
-				// time.Sleep(time.Second * 3)
 				index1, _, ok := rf.Start(cmd)
 				if ok {
-					// fmt.Println("[one] start success in", cmd, index1, starts)
 					index = index1
 					break
 				}
@@ -534,7 +532,6 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 			t1 := time.Now()
 			for time.Since(t1).Seconds() < 2 {
 				nd, cmd1 := cfg.nCommitted(index)
-				// fmt.Printf("[one] index %v, nd %v cmd %v\n", index, nd, cmd1)
 				if nd > 0 && nd >= expectedServers {
 					// committed
 					if cmd1 == cmd {
@@ -545,13 +542,13 @@ func (cfg *config) one(cmd interface{}, expectedServers int, retry bool) int {
 				time.Sleep(20 * time.Millisecond)
 			}
 			if retry == false {
-				cfg.t.Fatalf("one(%+v) failed to reach agreement", cmd)
+				cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
 			}
 		} else {
 			time.Sleep(50 * time.Millisecond)
 		}
 	}
-	cfg.t.Fatalf("one(%+v) failed to reach agreement", cmd)
+	cfg.t.Fatalf("one(%v) failed to reach agreement", cmd)
 	return -1
 }
 

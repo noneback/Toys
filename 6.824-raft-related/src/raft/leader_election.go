@@ -90,6 +90,5 @@ func (rf *Raft) RequestVote(req *RequestVoteArgs, resp *RequestVoteReply) {
 }
 
 func (rf *Raft) sendRequestVoteL(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
-	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
-	return ok
+	return rf.peers[server].Call("Raft.RequestVote", args, reply)
 }
