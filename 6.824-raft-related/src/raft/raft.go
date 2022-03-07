@@ -42,6 +42,7 @@ type ApplyMsg struct {
 	CommandValid bool
 	Command      interface{}
 	CommandIndex int
+	CommandTerm  int
 
 	// For 2D:
 	SnapshotValid bool
@@ -257,7 +258,7 @@ func (rf *Raft) ChangeStateL(state NodeState) {
 		rf.heartbeatTimer.Stop()
 		rf.resetElectionTimerL()
 	case StateLeader:
-		// A new Leader doesn't no peer's matchIndex, need to reset
+		// A new Leader doesn't know peer's matchIndex, need to reset
 		lastLog := rf.getLastLogL()
 		for i := 0; i < len(rf.peers); i++ {
 			rf.matchIndex[i], rf.nextIndex[i] = 0, lastLog.Index+1

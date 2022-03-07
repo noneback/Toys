@@ -302,6 +302,7 @@ func (rf *Raft) applier() {
 				CommandValid: true,
 				Command:      e.Cmd,
 				CommandIndex: e.Index,
+				CommandTerm:  e.Term,
 			}
 		}
 

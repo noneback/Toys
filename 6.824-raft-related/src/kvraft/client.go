@@ -1,13 +1,17 @@
 package kvraft
 
-import "6.824/labrpc"
-import "crypto/rand"
-import "math/big"
+import (
+	"crypto/rand"
+	"math/big"
 
+	"6.824/labrpc"
+)
 
 type Clerk struct {
-	servers []*labrpc.ClientEnd
-	// You will have to modify this struct.
+	servers   []*labrpc.ClientEnd
+	id        string
+	leaderID  int
+	commandID int
 }
 
 func nrand() int64 {
@@ -18,47 +22,42 @@ func nrand() int64 {
 }
 
 func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
-	ck := new(Clerk)
-	ck.servers = servers
-	// You'll have to add code here.
-	return ck
+	return &Clerk{
+		id:        genUID(),
+		leaderID:  0,
+		commandID: 0,
+		servers:   servers,
+	}
 }
 
-//
-// fetch the current value for a key.
-// returns "" if the key does not exist.
-// keeps trying forever in the face of all other errors.
-//
-// you can send an RPC with code like this:
-// ok := ck.servers[i].Call("KVServer.Get", &args, &reply)
-//
-// the types of args and reply (including whether they are pointers)
-// must match the declared types of the RPC handler function's
-// arguments. and reply must be passed as a pointer.
-//
 func (ck *Clerk) Get(key string) string {
-
-	// You will have to modify this function.
-	return ""
-}
-
-//
-// shared by Put and Append.
-//
-// you can send an RPC with code like this:
-// ok := ck.servers[i].Call("KVServer.PutAppend", &args, &reply)
-//
-// the types of args and reply (including whether they are pointers)
-// must match the declared types of the RPC handler function's
-// arguments. and reply must be passed as a pointer.
-//
-func (ck *Clerk) PutAppend(key string, value string, op string) {
-	// You will have to modify this function.
+	return ck.SendCommand(&Command{Key: key, Op: OpGet})
 }
 
 func (ck *Clerk) Put(key string, value string) {
-	ck.PutAppend(key, value, "Put")
+	ck.SendCommand(&Command{Key: key, Value: value, Op: OpPut})
 }
 func (ck *Clerk) Append(key string, value string) {
-	ck.PutAppend(key, value, "Append")
+	ck.SendCommand(&Command{Key: key, Value: value, Op: OpAppend})
+}
+
+func (ck *Clerk) SendCommand(cmd *Command) string {
+	req := CommandRequest{
+		ClientID:  ck.id,
+		CommandID: ck.commandID,
+		Cmd:       cmd,
+	}
+
+	for {
+		resp := CommandResponse{}
+
+		if !ck.servers[ck.leaderID].Call("KVServer.HandleCommand", &req, &resp) || resp.Err == ErrTimeout || resp.Err == ErrWrongLeader {
+			// not success ,continue
+			DPrintf("[Command Failed] with req %+v and resp %+v", req, resp)
+			ck.leaderID = (ck.leaderID + 1) % len(ck.servers)
+			continue
+		}
+		ck.commandID++
+		return resp.Value
+	}
 }
