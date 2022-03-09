@@ -56,7 +56,7 @@ type Command struct {
 type CommandRequest struct {
 	ClientID  string
 	CommandID int
-	Cmd       *Command
+	Cmd       Command
 }
 
 type CommandResponse struct {

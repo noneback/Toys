@@ -42,12 +42,14 @@ func (ck *Clerk) Append(key string, value string) {
 }
 
 func (ck *Clerk) SendCommand(cmd *Command) string {
+
 	req := CommandRequest{
 		ClientID:  ck.id,
 		CommandID: ck.commandID,
-		Cmd:       cmd,
+		Cmd:       *cmd,
 	}
 
+	DPrintf("[SnedCommand] ck send a command to server %+v\n", req)
 	for {
 		resp := CommandResponse{}
 

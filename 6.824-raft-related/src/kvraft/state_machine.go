@@ -7,7 +7,7 @@ type KVStateMachine interface {
 }
 
 type MemoryKV struct {
-	kv map[string]string
+	KV map[string]string
 }
 
 func NewMemoryKV() *MemoryKV {
@@ -15,18 +15,18 @@ func NewMemoryKV() *MemoryKV {
 }
 
 func (mkv *MemoryKV) Get(key string) (string, Err) {
-	if val, ok := mkv.kv[key]; ok {
+	if val, ok := mkv.KV[key]; ok {
 		return val, OK
 	}
 	return "", ErrNoKey
 }
 
 func (mkv *MemoryKV) Put(key, val string) Err {
-	mkv.kv[key] = val
+	mkv.KV[key] = val
 	return OK
 }
 
 func (mkv *MemoryKV) Append(key, val string) Err {
-	mkv.kv[key] += val
+	mkv.KV[key] += val
 	return OK
 }
