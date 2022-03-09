@@ -270,6 +270,9 @@ func (rf *Raft) needReplicating(peer int) bool {
 
 // appendEntryL append entry to the tail of logs
 func (rf *Raft) appendEntryL(cmd interface{}) *LogEntry {
+	if cmd == nil {
+		panic("[raft cmd is nil]")
+	}
 	lastLog := rf.getLastLogL()
 	newLog := LogEntry{
 		Index: lastLog.Index + 1,
@@ -299,9 +302,10 @@ func (rf *Raft) applier() {
 
 		for _, e := range entries {
 			rf.applyCh <- ApplyMsg{
-				CommandValid: true,
+				CommandValid: e.Cmd != nil,
 				Command:      e.Cmd,
 				CommandIndex: e.Index,
+				CommandTerm:  e.Term,
 			}
 		}
 

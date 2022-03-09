@@ -20,6 +20,7 @@ package raft
 import (
 	"bytes"
 	"sync"
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -42,6 +43,7 @@ type ApplyMsg struct {
 	CommandValid bool
 	Command      interface{}
 	CommandIndex int
+	CommandTerm  int
 
 	// For 2D:
 	SnapshotValid bool
@@ -100,7 +102,6 @@ func (rf *Raft) GetState() (int, bool) {
 // save Raft's persistent state to stable storage,
 // where it can later be retrieved after a crash and restart.
 // see paper's Figure 2 for a description of what should be persistent.
-//
 func (rf *Raft) persist() {
 	rf.persister.SaveRaftState(rf.encodeStateL())
 }
@@ -149,6 +150,9 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		return -1, -1, false
 	}
 	DPrintf("[Start] Node %v\n", rf.me)
+	if command == nil {
+		fmt.Printf("[raft Start] command == nil, not expected\n")
+	}
 	// append to log
 	newLog := rf.appendEntryL(command)
 	// make an agreement
@@ -257,7 +261,7 @@ func (rf *Raft) ChangeStateL(state NodeState) {
 		rf.heartbeatTimer.Stop()
 		rf.resetElectionTimerL()
 	case StateLeader:
-		// A new Leader doesn't no peer's matchIndex, need to reset
+		// A new Leader doesn't know peer's matchIndex, need to reset
 		lastLog := rf.getLastLogL()
 		for i := 0; i < len(rf.peers); i++ {
 			rf.matchIndex[i], rf.nextIndex[i] = 0, lastLog.Index+1

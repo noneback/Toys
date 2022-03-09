@@ -13,7 +13,7 @@ const (
 )
 
 func init() {
-	f, err := os.OpenFile("./test/log.txt", os.O_RDWR|os.O_CREATE|os.O_TRUNC, os.ModeAppend)
+	f, err := os.OpenFile("/home/noneback/workspace/Toys/6.824-raft-related/src/raft/test/log.txt", os.O_RDWR|os.O_CREATE|os.O_TRUNC, os.ModeAppend)
 	if err != nil {
 		panic(err)
 	}
