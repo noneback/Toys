@@ -4,3 +4,6 @@
 [submodule "simplePS"]
 	path = simplePS
 	url = git@github.com:noneback/simplePS.git
+[submodule "mazer"]
+	path = mazer
+	url = git@github.com:noneback/mazer.git
