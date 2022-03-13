@@ -13,3 +13,6 @@
 [submodule "QRFT"]
 	path = QRFT
 	url = git@github.com:noneback/QRFT.git
+[submodule "MarkdownEditor"]
+	path = MarkdownEditor
+	url = git@github.com:noneback/MarkdownEditor.git

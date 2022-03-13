@@ -106,9 +106,8 @@ func (kvs *KVServer) isDuplicatedRequest(clientID string, reqID int) bool {
 func (kvs *KVServer) HandleCommand(req *CommandRequest, resp *CommandResponse) {
 	DPrintf("[HandleCommand] before processing req %+v\n", req)
 	kvs.mu.Lock()
-	// if req == nil {
-	// 	panic("[HandleCommand] receive a nil req")
-	// }
+
+  // return right away if it has been handled.
 	if req.Cmd.Op != OpGet && kvs.isDuplicatedRequest(req.ClientID, req.CommandID) {
 		lastResp := kvs.lastClientAppliedOpts[req.ClientID].Resp
 		resp.Value, resp.Err = lastResp.Value, lastResp.Err
@@ -165,6 +164,7 @@ func (kvs *KVServer) applier() {
 					kvs.mu.Unlock()
 					continue
 				}
+        
 				// should applied to state machine
 				kvs.lastApplied = msg.CommandIndex
 
@@ -184,7 +184,7 @@ func (kvs *KVServer) applier() {
 					}
 				}
 
-				// why we need to check this term
+				// why we need to check this term ? if not, means msg is a lagged msg from older leader, no need to handle in current leader.
 				if currentTerm, isLeader := kvs.rf.GetState(); isLeader && msg.CommandTerm == currentTerm {
 					ch := kvs.notifyChans[msg.CommandIndex]
 					ch <- resp // send resp to handlerCommand
