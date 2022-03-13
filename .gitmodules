@@ -7,3 +7,9 @@
 [submodule "mazer"]
 	path = mazer
 	url = git@github.com:noneback/mazer.git
+[submodule "SimplifiedTouTiaoSearch"]
+	path = SimplifiedTouTiaoSearch
+	url = git@github.com:noneback/SimplifiedTouTiaoSearch.git
+[submodule "QRFT"]
+	path = QRFT
+	url = git@github.com:noneback/QRFT.git
