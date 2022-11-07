@@ -16,3 +16,6 @@
 [submodule "MarkdownEditor"]
 	path = MarkdownEditor
 	url = git@github.com:noneback/MarkdownEditor.git
+[submodule "thrdpool"]
+	path = thrdpool
+	url = https://github.com/noneback/thrdpool.git
